@@ -15,6 +15,10 @@ use tempfile::NamedTempFile;
 pub enum MediaError {
     #[error("the maximum thumbnail edge must be greater than zero")]
     InvalidMaximumEdge,
+    #[error("invalid recording configuration or transition: {0}")]
+    InvalidRecording(String),
+    #[error("recording finalization failed: {0}")]
+    Finalization(String),
     #[error("unsupported thumbnail source: {0}")]
     UnsupportedSource(PathBuf),
     #[error("GStreamer error: {0}")]
