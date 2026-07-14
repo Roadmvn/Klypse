@@ -68,3 +68,30 @@ msgstr "Supprimer le fichier"
 
 msgid "Unable to open the capture library"
 msgstr "Impossible d’ouvrir la bibliothèque de captures"
+
+msgid "Record area"
+msgstr "Enregistrer une zone"
+
+msgid "Record screen"
+msgstr "Enregistrer l’écran"
+
+msgid "Record GIF"
+msgstr "Enregistrer un GIF"
+
+msgid "Stop recording"
+msgstr "Arrêter l’enregistrement"
+
+msgid "Select what to record"
+msgstr "Sélectionnez ce qui doit être enregistré"
+
+msgid "Recording GIF"
+msgstr "Enregistrement du GIF"
+
+msgid "Recording video"
+msgstr "Enregistrement vidéo"
+
+msgid "Finalizing recording"
+msgstr "Finalisation de l’enregistrement"
+
+msgid "Recording failed"
+msgstr "Échec de l’enregistrement"

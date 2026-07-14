@@ -24,6 +24,10 @@ fn defaults_match_the_product_contract() {
         settings.shortcut(HotkeyAction::CaptureScreen).as_deref(),
         Some("Print")
     );
+    assert_eq!(
+        settings.shortcut(HotkeyAction::StopRecording).as_deref(),
+        Some("<Primary><Shift>Escape")
+    );
 }
 
 #[test]
@@ -40,6 +44,9 @@ fn typed_settings_round_trip_and_reject_invalid_values() {
     settings
         .set_shortcut(HotkeyAction::RecordGif, "<Super>G")
         .unwrap();
+    settings
+        .set_shortcut(HotkeyAction::StopRecording, "<Super>Escape")
+        .unwrap();
 
     assert_eq!(settings.capture_directory().as_deref(), Some(directory));
     assert!(!settings.copy_after_capture());
@@ -51,6 +58,10 @@ fn typed_settings_round_trip_and_reject_invalid_values() {
         settings.shortcut(HotkeyAction::RecordGif).as_deref(),
         Some("<Super>G")
     );
+    assert_eq!(
+        settings.shortcut(HotkeyAction::StopRecording).as_deref(),
+        Some("<Super>Escape")
+    );
 
     assert!(settings.set_gif_fps(0).is_err());
     assert!(settings.set_gif_fps(31).is_err());
@@ -59,7 +70,7 @@ fn typed_settings_round_trip_and_reject_invalid_values() {
     assert!(settings.set_language("de").is_err());
     assert!(
         settings
-            .set_shortcut(HotkeyAction::StopRecording, "Escape")
+            .set_shortcut(HotkeyAction::StopRecording, "")
             .is_err()
     );
 }

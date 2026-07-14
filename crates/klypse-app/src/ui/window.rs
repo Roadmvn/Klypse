@@ -1,7 +1,7 @@
 use async_channel::Sender;
 use gettextrs::gettext;
 use gtk::{Align, Orientation, prelude::*};
-use klypse_domain::{AppCommand, CaptureRequest, CaptureTarget};
+use klypse_domain::AppCommand;
 use klypse_platform::{CapabilityReport, CapabilityStatus};
 use libadwaita as adw;
 use libadwaita::prelude::*;
@@ -10,6 +10,7 @@ pub fn present(
     application: &adw::Application,
     sender: Sender<AppCommand>,
     gallery_events: async_channel::Receiver<crate::gallery::GalleryEvent>,
+    recording: std::sync::Arc<std::sync::Mutex<super::recording::RecordingPresentation>>,
 ) {
     if let Some(window) = application.active_window() {
         window.present();
@@ -47,25 +48,8 @@ pub fn present(
         .margin_start(12)
         .margin_end(12)
         .build();
-    let actions = gtk::Box::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(12)
-        .build();
-
-    for (label, target) in [
-        (gettext("Capture area"), CaptureTarget::Area),
-        (gettext("Capture screen"), CaptureTarget::Screen),
-        (gettext("Capture window"), CaptureTarget::Window),
-    ] {
-        let button = gtk::Button::with_label(&label);
-        let action_sender = sender.clone();
-        button.connect_clicked(move |_| {
-            let _ = action_sender.try_send(AppCommand::Capture(CaptureRequest::new(target)));
-        });
-        actions.append(&button);
-    }
-
-    content.append(&actions);
+    let capabilities = CapabilityReport::detect();
+    content.append(&super::recording::build(sender, recording, &capabilities));
     match super::gallery::build(gallery_events) {
         Ok(gallery) => content.append(&gallery),
         Err(error) => {
@@ -77,7 +61,7 @@ pub fn present(
             content.append(&failure);
         }
     }
-    content.append(&diagnostics(&CapabilityReport::detect()));
+    content.append(&diagnostics(&capabilities));
     toolbar_view.set_content(Some(&content));
     window.set_content(Some(&toolbar_view));
     window.present();

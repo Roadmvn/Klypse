@@ -47,5 +47,9 @@
       <default>'&lt;Primary&gt;&lt;Shift&gt;Print'</default>
       <summary>GIF recording shortcut</summary>
     </key>
+    <key name="shortcut-stop" type="s">
+      <default>'&lt;Primary&gt;&lt;Shift&gt;Escape'</default>
+      <summary>Stop recording shortcut</summary>
+    </key>
   </schema>
 </schemalist>

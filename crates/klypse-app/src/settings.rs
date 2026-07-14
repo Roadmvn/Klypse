@@ -140,6 +140,7 @@ impl AppSettings {
             HotkeyAction::CaptureWindow,
             HotkeyAction::RecordVideo,
             HotkeyAction::RecordGif,
+            HotkeyAction::StopRecording,
         ]
         .into_iter()
         .filter_map(shortcut_key)
@@ -177,7 +178,7 @@ fn shortcut_key(action: HotkeyAction) -> Option<&'static str> {
         HotkeyAction::CaptureWindow => Some("shortcut-window"),
         HotkeyAction::RecordVideo => Some("shortcut-video"),
         HotkeyAction::RecordGif => Some("shortcut-gif"),
-        HotkeyAction::StopRecording => None,
+        HotkeyAction::StopRecording => Some("shortcut-stop"),
     }
 }
 

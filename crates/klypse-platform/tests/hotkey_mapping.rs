@@ -70,6 +70,7 @@ fn fallback_commands_are_stable_and_complete() {
             (HotkeyAction::CaptureWindow, "klypse capture active-window"),
             (HotkeyAction::RecordVideo, "klypse record video screen"),
             (HotkeyAction::RecordGif, "klypse record gif area"),
+            (HotkeyAction::StopRecording, "klypse stop"),
         ]
     );
 }

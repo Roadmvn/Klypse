@@ -195,6 +195,7 @@ fn shortcut_group(settings: &AppSettings) -> adw::PreferencesGroup {
         (gettext("Capture window"), HotkeyAction::CaptureWindow),
         (gettext("Record video"), HotkeyAction::RecordVideo),
         (gettext("Record GIF"), HotkeyAction::RecordGif),
+        (gettext("Stop recording"), HotkeyAction::StopRecording),
     ] {
         let row = adw::EntryRow::builder()
             .title(title)

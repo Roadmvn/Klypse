@@ -75,7 +75,9 @@ jobs:
         run: cargo test --workspace --locked
 
       - name: Run GTK content tests under Xvfb
-        run: xvfb-run -a cargo test -p klypse-app --test desktop_content --locked
+        run: >-
+          xvfb-run -a cargo test -p klypse-app
+          --test desktop_content --test editor_view --test recording_ui --locked
 
       - name: Run X11 capture and shortcut tests under Xvfb
         run: >-

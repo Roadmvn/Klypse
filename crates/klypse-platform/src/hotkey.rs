@@ -214,13 +214,14 @@ fn invalid_accelerator() -> KlypseError {
     KlypseError::InvalidRequest("invalid keyboard accelerator".into())
 }
 
-pub const fn cli_fallback_commands() -> [(HotkeyAction, &'static str); 5] {
+pub const fn cli_fallback_commands() -> [(HotkeyAction, &'static str); 6] {
     [
         (HotkeyAction::CaptureArea, "klypse capture area"),
         (HotkeyAction::CaptureScreen, "klypse capture screen"),
         (HotkeyAction::CaptureWindow, "klypse capture active-window"),
         (HotkeyAction::RecordVideo, "klypse record video screen"),
         (HotkeyAction::RecordGif, "klypse record gif area"),
+        (HotkeyAction::StopRecording, "klypse stop"),
     ]
 }
 

@@ -307,7 +307,7 @@ git commit -m "feat: add bounded streaming GIF recording"
 - Consumes: `RecordingBackend`, media pipelines, settings, repository, thumbnailer, notifications, and `AppCommand::StopRecording`.
 - Produces: `RecordingController::{start,stop,state}`, one active session limit, `.klypse-session.json` recovery markers, and recording UI state.
 
-- [ ] **Step 1: Write failing controller state tests**
+- [x] **Step 1: Write failing controller state tests**
 
 ```rust
 #[test]
@@ -325,13 +325,13 @@ fn successful_stop_persists_before_returning_to_idle() {
 }
 ```
 
-- [ ] **Step 2: Verify controller tests fail**
+- [x] **Step 2: Verify controller tests fail**
 
 Run: `cargo test -p klypse-app --test recording_controller`
 
 Expected: compilation fails because recording controller types are missing.
 
-- [ ] **Step 3: Implement orchestration and visible recording state**
+- [x] **Step 3: Implement orchestration and visible recording state**
 
 Allow one recording session. Before pipeline start, atomically write a JSON marker containing session ID, kind, backend, temporary path, requested target, and start time. On successful finalization and repository insert, remove the marker. On failure, retain it for startup recovery.
 
@@ -339,13 +339,13 @@ The UI replaces capture actions with a prominent Stop button while recording, di
 
 After finalization, atomically move the file, insert metadata, generate the thumbnail/poster, refresh and select the gallery record, and notify. Recordings are not automatically placed on the clipboard.
 
-- [ ] **Step 4: Run recording controller and workspace tests**
+- [x] **Step 4: Run recording controller and workspace tests**
 
 Run: `cargo test -p klypse-app --test recording_controller && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings`
 
 Expected: all state, persistence-order, cancellation, auto-stop, and error tests pass.
 
-- [ ] **Step 5: Commit complete recording workflows**
+- [x] **Step 5: Commit complete recording workflows**
 
 ```bash
 git add crates/klypse-app
