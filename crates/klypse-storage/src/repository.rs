@@ -19,6 +19,20 @@ pub trait CaptureStore: Send + Sync {
     fn delete(&self, id: &Uuid, mode: DeleteMode) -> Result<(), StorageError>;
     fn set_thumbnail(&self, id: &Uuid, path: &Path) -> Result<(), StorageError>;
     fn set_annotation(&self, id: &Uuid, annotation: Option<&str>) -> Result<(), StorageError>;
+
+    fn relocate(
+        &self,
+        _id: &Uuid,
+        _path: &Path,
+        _width: u32,
+        _height: u32,
+        _duration: Option<Duration>,
+        _file_size: u64,
+    ) -> Result<CaptureRecord, StorageError> {
+        Err(StorageError::InvalidValue(
+            "this capture store does not support file relocation".into(),
+        ))
+    }
 }
 
 pub struct CaptureRepository {
@@ -122,6 +136,41 @@ impl CaptureStore for CaptureRepository {
             return Err(StorageError::CaptureNotFound(*id));
         }
         Ok(())
+    }
+
+    fn relocate(
+        &self,
+        id: &Uuid,
+        path: &Path,
+        width: u32,
+        height: u32,
+        duration: Option<Duration>,
+        file_size: u64,
+    ) -> Result<CaptureRecord, StorageError> {
+        let duration_ms = duration
+            .map(|value| i64::try_from(value.as_millis()))
+            .transpose()
+            .map_err(|_| StorageError::InvalidValue("duration is too large".into()))?;
+        let file_size = i64::try_from(file_size)
+            .map_err(|_| StorageError::InvalidValue("file size is too large".into()))?;
+        let changed = self.connection()?.execute(
+            "UPDATE captures
+             SET path = ?1, width = ?2, height = ?3, duration_ms = ?4,
+                 file_size = ?5, thumbnail_path = NULL
+             WHERE id = ?6",
+            params![
+                path_to_text(path)?,
+                i64::from(width),
+                i64::from(height),
+                duration_ms,
+                file_size,
+                id.to_string(),
+            ],
+        )?;
+        if changed == 0 {
+            return Err(StorageError::CaptureNotFound(*id));
+        }
+        self.get(id)?.ok_or(StorageError::CaptureNotFound(*id))
     }
 }
 

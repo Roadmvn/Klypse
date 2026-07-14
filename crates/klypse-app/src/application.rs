@@ -52,6 +52,7 @@ pub fn run() -> glib::ExitCode {
         &application,
         sender.clone(),
         gallery_event_receiver,
+        gallery_event_sender.clone(),
         Arc::clone(&recording_presentation),
     );
     connect_command_line(&application, sender.clone());
@@ -190,6 +191,7 @@ fn connect_activate(
     application: &adw::Application,
     sender: Sender<AppCommand>,
     gallery_events: Receiver<GalleryEvent>,
+    gallery_event_sender: Sender<GalleryEvent>,
     recording: Arc<Mutex<RecordingPresentation>>,
 ) {
     application.connect_activate(move |application| {
@@ -197,6 +199,7 @@ fn connect_activate(
             application,
             sender.clone(),
             gallery_events.clone(),
+            gallery_event_sender.clone(),
             Arc::clone(&recording),
         );
     });

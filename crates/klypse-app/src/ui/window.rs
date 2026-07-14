@@ -10,6 +10,7 @@ pub fn present(
     application: &adw::Application,
     sender: Sender<AppCommand>,
     gallery_events: async_channel::Receiver<crate::gallery::GalleryEvent>,
+    gallery_event_sender: async_channel::Sender<crate::gallery::GalleryEvent>,
     recording: std::sync::Arc<std::sync::Mutex<super::recording::RecordingPresentation>>,
 ) {
     if let Some(window) = application.active_window() {
@@ -65,6 +66,7 @@ pub fn present(
     toolbar_view.set_content(Some(&content));
     window.set_content(Some(&toolbar_view));
     window.present();
+    super::recovery::scan_and_mount(&content, gallery_event_sender);
 }
 
 fn diagnostics(report: &CapabilityReport) -> gtk::Expander {

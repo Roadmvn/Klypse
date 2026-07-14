@@ -2,12 +2,14 @@ mod atomic_file;
 mod migration;
 mod model;
 mod paths;
+mod recovery;
 mod repository;
 
 pub use atomic_file::AtomicCaptureFile;
 pub use migration::{SCHEMA_VERSION, migrate, open_database};
 pub use model::{CaptureRecord, DeleteMode, NewCaptureRecord};
 pub use paths::AppPaths;
+pub use recovery::{InvalidRecoveryFile, Reconciler, RecoverableFile, RecoveryReport};
 pub use repository::{CaptureRepository, CaptureStore};
 
 #[derive(Debug, thiserror::Error)]

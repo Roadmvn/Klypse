@@ -48,7 +48,7 @@
 - Consumes: `AppPaths`, `CaptureStore`, recording markers, PNG/GIF decoders, and GStreamer Discoverer.
 - Produces: `Reconciler::scan`, `RecoveryReport`, `RecoverableFile`, `Reconciler::restore`, and `Reconciler::discard`.
 
-- [ ] **Step 1: Write failing reconciliation tests**
+- [x] **Step 1: Write failing reconciliation tests**
 
 ```rust
 #[test]
@@ -68,13 +68,13 @@ fn missing_capture_file_is_reported_without_dropping_row() {
 }
 ```
 
-- [ ] **Step 2: Verify reconciliation tests fail**
+- [x] **Step 2: Verify reconciliation tests fail**
 
 Run: `cargo test -p klypse-storage --test recovery`
 
 Expected: compilation fails because recovery types are missing.
 
-- [ ] **Step 3: Implement conservative recovery rules**
+- [x] **Step 3: Implement conservative recovery rules**
 
 Scan only Klypse-owned temporary, orphan, and marker directories. Validate PNG/GIF by fully decoding metadata and at least one frame. Validate WebM with GStreamer Discoverer. Match markers to their exact temporary paths after canonicalizing both under the expected runtime directory.
 
@@ -82,13 +82,13 @@ Return four lists: recoverable files, invalid temporary files, rows with missing
 
 Show recovery choices after the main window appears. Missing gallery files remain visible with a warning and actions to Locate File or Remove from Gallery.
 
-- [ ] **Step 4: Run recovery and path-traversal tests**
+- [x] **Step 4: Run recovery and path-traversal tests**
 
 Run: `cargo test -p klypse-storage --test recovery && cargo test -p klypse-app recovery`
 
 Expected: valid recovery, invalid media, missing files, stale thumbnails, marker mismatch, symlink escape, and cancellation tests pass.
 
-- [ ] **Step 5: Commit recovery support**
+- [x] **Step 5: Commit recovery support**
 
 ```bash
 git add crates/klypse-storage crates/klypse-app

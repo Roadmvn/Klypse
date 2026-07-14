@@ -95,3 +95,42 @@ msgstr "Finalisation de l’enregistrement"
 
 msgid "Recording failed"
 msgstr "Échec de l’enregistrement"
+
+msgid "Recovery needed"
+msgstr "Récupération nécessaire"
+
+msgid "Interrupted capture"
+msgstr "Capture interrompue"
+
+msgid "Restore"
+msgstr "Restaurer"
+
+msgid "Discard"
+msgstr "Supprimer"
+
+msgid "Capture restored"
+msgstr "Capture restaurée"
+
+msgid "Recovery action failed"
+msgstr "Échec de l’action de récupération"
+
+msgid "Unusable temporary file"
+msgstr "Fichier temporaire inutilisable"
+
+msgid "Missing gallery file"
+msgstr "Fichier manquant dans la galerie"
+
+msgid "Locate File"
+msgstr "Localiser le fichier"
+
+msgid "Selected file is not local"
+msgstr "Le fichier sélectionné n’est pas local"
+
+msgid "Capture location updated"
+msgstr "Emplacement de la capture mis à jour"
+
+msgid "Stale thumbnail"
+msgstr "Miniature obsolète"
+
+msgid "Unknown file"
+msgstr "Fichier inconnu"
