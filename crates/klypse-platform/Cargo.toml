@@ -15,9 +15,11 @@ async-trait.workspace = true
 chrono.workspace = true
 futures-lite.workspace = true
 global-hotkey.workspace = true
+gstreamer.workspace = true
 image.workspace = true
 gtk.workspace = true
 klypse-domain = { path = "../klypse-domain" }
+klypse-media = { path = "../klypse-media" }
 tempfile.workspace = true
 url.workspace = true
 uuid.workspace = true

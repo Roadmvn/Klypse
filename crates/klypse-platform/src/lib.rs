@@ -16,6 +16,9 @@ pub use portal::{
     validate_portal_bindings,
 };
 pub use selector::{BackendChoice, BackendSelector};
-pub use x11::{Rect, X11CaptureBackend, X11HotkeyBackend, bgra_to_rgba, normalize_selection};
+pub use x11::{
+    Rect, X11CaptureBackend, X11HotkeyBackend, X11RecordingSource, bgra_to_rgba,
+    normalize_selection,
+};
 
 pub const CRATE_NAME: &str = "klypse-platform";

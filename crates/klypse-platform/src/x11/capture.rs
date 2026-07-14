@@ -130,7 +130,7 @@ impl X11CaptureBackend {
         })
     }
 
-    fn resolve_rect(&self, request: &CaptureRequest) -> Result<Rect, KlypseError> {
+    pub(super) fn resolve_rect(&self, request: &CaptureRequest) -> Result<Rect, KlypseError> {
         let screen = &self.connection.setup().roots[self.screen_number];
         match (request.target, request.selection) {
             (CaptureTarget::Screen, _) => Ok(Rect {
@@ -158,6 +158,11 @@ impl X11CaptureBackend {
                 "X11 capture target requires an explicit selection".into(),
             )),
         }
+    }
+
+    pub(super) fn validate_root_rect(&self, rect: Rect) -> Result<(), KlypseError> {
+        let screen = &self.connection.setup().roots[self.screen_number];
+        validate_rect(rect, screen.width_in_pixels, screen.height_in_pixels)
     }
 
     fn active_window(&self) -> Result<Window, KlypseError> {
