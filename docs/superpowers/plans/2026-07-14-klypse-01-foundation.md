@@ -37,6 +37,9 @@
 
 **Files:**
 - Create: `scripts/bootstrap-debian.sh`
+- Create: `scripts/dev-container.sh`
+- Create: `scripts/check-dev-environment.sh`
+- Create: `packaging/dev/Dockerfile`
 - Create: `scripts/check-workspace.sh`
 - Create: `Cargo.toml`
 - Create: `Cargo.lock`
@@ -52,6 +55,7 @@
 - Create: `crates/klypse-image/Cargo.toml`
 - Create: `crates/klypse-image/src/lib.rs`
 - Create: `crates/klypse-app/Cargo.toml`
+- Create: `crates/klypse-app/src/lib.rs`
 - Create: `crates/klypse-app/src/main.rs`
 
 **Interfaces:**
@@ -100,8 +104,16 @@ packages=(
   libxcb-composite0-dev libxcb-xfixes0-dev xvfb dbus-x11
   flatpak flatpak-builder dpkg-dev debhelper appstream lintian
 )
-sudo apt-get update
-sudo apt-get install -y "${packages[@]}"
+if sudo -n true 2>/dev/null; then
+  sudo apt-get update
+  sudo apt-get install -y "${packages[@]}"
+elif docker info >/dev/null 2>&1; then
+  scripts/dev-container.sh true
+  exit 0
+else
+  echo "Klypse requires passwordless sudo or an accessible Docker daemon" >&2
+  exit 1
+fi
 if ! command -v rustup >/dev/null 2>&1; then
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |
     sh -s -- -y --profile minimal --default-toolchain stable
@@ -165,7 +177,7 @@ Run: `bash scripts/bootstrap-debian.sh`
 
 Expected: all packages and the stable Rust toolchain install successfully.
 
-Run: `source "$HOME/.cargo/env" && bash scripts/check-workspace.sh && cargo fmt --all --check && cargo check --workspace`
+Run: `bash scripts/check-workspace.sh && scripts/dev-container.sh cargo fmt --all --check && scripts/dev-container.sh cargo check --workspace`
 
 Expected: all commands exit 0.
 
