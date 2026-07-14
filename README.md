@@ -1,31 +1,109 @@
 # Klypse
 
-Klypse is a Linux-first screenshot workspace designed to keep captures easy to find, edit, and reuse.
+[![Review](https://github.com/Roadmvn/Klypse/actions/workflows/review.yml/badge.svg)](https://github.com/Roadmvn/Klypse/actions/workflows/review.yml)
 
-Instead of treating every screenshot as a separate action, Klypse keeps recent captures in a persistent gallery. Images can be opened, annotated, copied, or dragged directly into another application.
+Klypse is a native Linux screenshot and screen-recording workspace for X11 and Wayland. It creates PNG screenshots, silent WebM/VP8 recordings, and animated GIFs, then keeps them in a persistent local gallery.
 
-## Planned MVP
+The 0.1.0 MVP includes region, screen, window, and active-window capture; video and GIF recording; clipboard copy and drag; a non-destructive annotation editor; configurable global shortcuts; recovery after interrupted writes; and English/French UI. Klypse does not upload captures or make application-level network requests.
 
-- Capture a selected region, the full screen, or the active window.
-- Keep recent screenshots in a persistent visual gallery.
-- Crop and annotate images without leaving the application.
-- Copy or drag screenshots into other applications.
-- Configure global keyboard shortcuts for capture actions.
-- Use the interface in English or French.
-- Detect the system language on first launch and allow manual changes in settings.
+## Install
 
-## Platform
+### Debian package
 
-Klypse targets Linux, with development and testing starting on Kali Linux. Compatibility will be validated on both X11 and Wayland.
+Build and inspect the package in the reproducible Debian container:
 
-## Project status
+```bash
+./scripts/build-debian-package.sh
+./scripts/dev-container.sh bash scripts/test-debian-package.sh \
+  build/debian/klypse_0.1.0-1_amd64.deb
+sudo apt install ./build/debian/klypse_0.1.0-1_amd64.deb
+```
 
-Klypse is currently in the design phase. No release is available yet.
+The Review workflow also publishes the `.deb` as a CI artifact after every successful `main` build.
 
-## Reference material
+### Flatpak
 
-The following screenshots document the workflow that inspired the first version. They are behavioral references, not a target for the final visual design.
+Install `flatpak` and `flatpak-builder`, then run:
 
-- [Capture shortcuts](docs/images/references/sharex-hotkeys.png)
-- [Persistent capture gallery](docs/images/references/sharex-gallery.png)
-- [Image actions and editing](docs/images/references/sharex-image-actions.png)
+```bash
+bash scripts/build-flatpak.sh
+bash scripts/test-flatpak.sh
+```
+
+The script installs the GNOME 50 SDK/runtime from Flathub when needed, builds Cargo dependencies offline from the committed lockfile sources, exports `build/flatpak-repo`, and installs `io.github.roadmvn.Klypse` for the current user.
+
+The sandbox grants Wayland, fallback X11, GPU acceleration, and `xdg-pictures`. It does not grant network, full home-directory, or raw host D-Bus access.
+
+## Use
+
+Launch Klypse from the application menu or with `klypse open`. The command-line interface uses the same application command bus as the buttons and shortcuts:
+
+```bash
+klypse capture area
+klypse capture screen
+klypse capture window
+klypse capture active-window
+klypse record video area
+klypse record video screen
+klypse record gif area
+klypse stop
+```
+
+Video and GIF recording are silent in 0.1.0. GIF defaults to 12 FPS and stops after at most 30 seconds; both values are configurable within their supported range.
+
+Default shortcuts:
+
+| Action | Shortcut |
+|---|---|
+| Capture area | `Ctrl+Print` |
+| Capture screen | `Print` |
+| Capture window | `Alt+Print` |
+| Record video | `Shift+Print` |
+| Record GIF | `Ctrl+Shift+Print` |
+| Stop recording | `Ctrl+Shift+Escape` |
+
+On X11, Klypse uses its direct capture backend and selection overlay. On Wayland, it uses the desktop Screenshot, ScreenCast/PipeWire, and GlobalShortcuts portals; the compositor owns the secure picker. If the Wayland shortcut portal is unavailable, configure the desktop environment to invoke the CLI commands above.
+
+The editor supports rectangle, ellipse, line, arrow, text, freehand, crop, pixelation, and blur tools, plus undo/redo, zoom, non-destructive save, flattened export, and clipboard copy.
+
+## Local data and privacy
+
+Native package defaults:
+
+| Data | Default location |
+|---|---|
+| Captures | `$XDG_PICTURES_DIR/Klypse` |
+| Gallery database and annotations | `$XDG_DATA_HOME/klypse/library.sqlite3` |
+| Recovery orphans | `$XDG_DATA_HOME/klypse/orphans` |
+| Thumbnails | `$XDG_CACHE_HOME/klypse/thumbnails` |
+| In-progress files | `$XDG_RUNTIME_DIR/klypse/tmp` |
+
+When an XDG variable is unset, the usual `~/.local/share`, `~/.cache`, and `~/Pictures` fallbacks apply. Flatpak stores database/cache state below `~/.var/app/io.github.roadmvn.Klypse/` while captures remain in the permitted Pictures directory.
+
+Klypse never logs capture contents. Interrupted and orphaned files are reported for an explicit restore/discard decision and are not deleted automatically.
+
+## Uninstall
+
+```bash
+sudo apt remove klypse
+# or
+flatpak uninstall --user io.github.roadmvn.Klypse
+```
+
+Package removal intentionally preserves captures and native user data. `flatpak uninstall --delete-data` removes Flatpak-private database/cache state, but files saved in `~/Pictures/Klypse` remain user-owned and must be removed manually if desired.
+
+## Develop and verify
+
+On Debian-compatible systems, `./scripts/bootstrap-debian.sh` installs prerequisites when passwordless sudo is available, or prepares the development container when Docker is available.
+
+Run the complete release gate:
+
+```bash
+./scripts/dev-container.sh bash scripts/verify-release.sh
+```
+
+It checks formatting, translations, Desktop/AppStream metadata, Clippy with warnings denied, the full workspace test suite both normally and under Xvfb, the release build, dependency advisories, licences, and source policy. Pass a `.deb` path as the first argument to include its content smoke test. Set `KLYPSE_VERIFY_FLATPAK=1` when the Flatpak is installed in the current environment.
+
+See [the Linux compatibility matrix](docs/testing/linux-compatibility-matrix.md) for the distinction between automated coverage and manual desktop-session validation.
+
+Klypse is licensed under GPL-3.0-or-later.

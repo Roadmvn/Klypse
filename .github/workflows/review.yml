@@ -18,10 +18,10 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  rust-review:
-    name: Format, lint, test, and build
+  release-gate:
+    name: Release verification
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 45
 
     steps:
       - name: Check out source
@@ -33,8 +33,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
+            appstream \
             build-essential \
             dbus-x11 \
+            desktop-file-utils \
             gettext \
             gstreamer1.0-libav \
             gstreamer1.0-plugins-bad \
@@ -65,35 +67,81 @@ jobs:
       - name: Cache Rust build data
         uses: Swatinem/rust-cache@v2
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
 
-      - name: Check French translations
-        run: bash scripts/check-translations.sh
+      - name: Run the release gate
+        run: bash scripts/verify-release.sh
 
-      - name: Run Clippy with warnings denied
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+  debian-package:
+    name: Build and inspect Debian package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
 
-      - name: Run headless workspace tests
-        run: cargo test --workspace --locked
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: Run GTK content tests under Xvfb
-        run: >-
-          xvfb-run -a cargo test -p klypse-app
-          --test accessibility --test desktop_content --test editor_view
-          --test failure_matrix --test gallery_scale --test recording_ui
-          --test recovery_ui --locked
+      - name: Install Debian package dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            appstream \
+            cargo \
+            debhelper \
+            desktop-file-utils \
+            dpkg-dev \
+            gettext \
+            gstreamer1.0-libav \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            libadwaita-1-dev \
+            libgettextpo-dev \
+            libglib2.0-bin \
+            libgstreamer-plugins-base1.0-dev \
+            libgstreamer1.0-dev \
+            libgtk-4-dev \
+            libpipewire-0.3-dev \
+            libsqlite3-dev \
+            libxcb-composite0-dev \
+            libxcb-randr0-dev \
+            libxcb-xfixes0-dev \
+            libxcb1-dev \
+            lintian \
+            pkg-config \
+            rustc
 
-      - name: Run X11 capture and shortcut tests under Xvfb
-        run: >-
-          xvfb-run -a cargo test -p klypse-platform
-          --test x11_capture --test x11_recording_source --test hotkey_mapping --locked
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Build release binary
-        run: cargo build --workspace --release --locked
+      - name: Cache Rust build data
+        uses: Swatinem/rust-cache@v2
 
-  dependency-review:
-    name: Dependency policy and advisories
+      - name: Build binary package
+        run: dpkg-buildpackage -us -uc -b
+
+      - name: Inspect package
+        run: |
+          deb="$(find .. -maxdepth 1 -name 'klypse_*_amd64.deb' -print -quit)"
+          test -n "$deb"
+          bash scripts/test-debian-package.sh "$deb"
+          lintian --fail-on error "$deb"
+          mkdir -p build/debian
+          cp "$deb" build/debian/
+
+      - name: Publish Debian artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: klypse-debian-amd64
+          path: build/debian/*.deb
+          if-no-files-found: error
+          retention-days: 14
+
+  flatpak-manifest:
+    name: Validate Flatpak manifest
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -103,8 +151,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check dependency policy
-        uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check
-          arguments: --all-features
+      - name: Install Flatpak tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends flatpak-builder
+
+      - name: Validate generated sources and manifest
+        run: |
+          python3 -m json.tool packaging/flatpak/cargo-sources.json >/dev/null
+          flatpak-builder --show-manifest \
+            packaging/flatpak/io.github.roadmvn.Klypse.yml >/dev/null
