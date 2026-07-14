@@ -19,6 +19,7 @@ clap.workspace = true
 gettext-rs.workspace = true
 gtk.workspace = true
 klypse-domain = { path = "../klypse-domain" }
+klypse-image = { path = "../klypse-image" }
 klypse-media = { path = "../klypse-media" }
 klypse-platform = { path = "../klypse-platform" }
 klypse-storage = { path = "../klypse-storage" }

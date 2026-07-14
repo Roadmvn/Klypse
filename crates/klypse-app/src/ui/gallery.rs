@@ -252,6 +252,16 @@ fn detail_pane(
             }
         }
     });
+    edit.connect_clicked({
+        let selection = selection.clone();
+        move |_| {
+            if let Some(record) = selected_record(&selection)
+                && let Err(error) = super::editor::present(record.clone())
+            {
+                tracing::warn!(capture_id = %record.id, %error, "capture editor could not be opened");
+            }
+        }
+    });
     reveal.connect_clicked({
         let selection = selection.clone();
         move |_| {

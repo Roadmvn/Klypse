@@ -1725,6 +1725,7 @@ dependencies = [
  "gtk4",
  "image",
  "klypse-domain",
+ "klypse-image",
  "klypse-media",
  "klypse-platform",
  "klypse-storage",
