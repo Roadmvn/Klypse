@@ -17,6 +17,7 @@ repository = "https://github.com/Roadmvn/Klypse"
 
 [workspace.dependencies]
 anyhow = "1.0.103"
+ashpd = { version = "0.13.12", default-features = false, features = ["async-io", "gtk4", "screenshot", "screencast", "global_shortcuts"] }
 async-channel = "2.5.0"
 async-trait = "0.1"
 chrono = { version = "0.4.45", features = ["serde"] }
@@ -38,3 +39,5 @@ thiserror = "2.0.18"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 uuid = { version = "1.23.5", features = ["v4", "serde"] }
+x11rb = { version = "0.13.2", features = ["randr", "composite", "xfixes"] }
+url = "2"

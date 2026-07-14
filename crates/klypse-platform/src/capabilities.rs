@@ -156,9 +156,10 @@ impl DisplayProbe {
             .as_deref()
             .is_some_and(|directory| Path::new(directory).join("pipewire-0").exists());
 
+        let x11_environment_available = env::var_os("DISPLAY").is_some();
         Self {
             wayland_available: env::var_os("WAYLAND_DISPLAY").is_some(),
-            x11_available: env::var_os("DISPLAY").is_some(),
+            x11_available: x11_environment_available && x11rb::connect(None).is_ok(),
             portal_available: portal_has_owner(),
             pipewire_available,
             vp8enc_available: gst_element_exists("vp8enc"),

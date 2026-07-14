@@ -9,4 +9,11 @@ repository.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
+ashpd.workspace = true
+async-trait.workspace = true
+image.workspace = true
 klypse-domain = { path = "../klypse-domain" }
+tempfile.workspace = true
+url.workspace = true
+uuid.workspace = true
+x11rb.workspace = true
