@@ -1,0 +1,7 @@
+/*.png
+/.playwright-mcp/
+/tmp/
+*.log
+*.bak
+*_v2*
+*_new*
