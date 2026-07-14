@@ -229,7 +229,7 @@ git commit -m "build: add Debian packaging"
 **Interfaces:**
 - Produces: local Flatpak repository and installed `io.github.roadmvn.Klypse` test build using the GNOME 50 runtime.
 
-- [ ] **Step 1: Write a failing Flatpak metadata test**
+- [x] **Step 1: Write a failing Flatpak metadata test**
 
 ```bash
 #!/usr/bin/env bash
@@ -239,13 +239,13 @@ grep -q 'ID: io.github.roadmvn.Klypse' /tmp/klypse-flatpak-info
 flatpak run --command=klypse io.github.roadmvn.Klypse --help | grep -q 'capture'
 ```
 
-- [ ] **Step 2: Verify the Flatpak test fails before installation**
+- [x] **Step 2: Verify the Flatpak test fails before installation**
 
 Run: `bash scripts/test-flatpak.sh`
 
 Expected: `flatpak info` exits nonzero because Klypse is not installed.
 
-- [ ] **Step 3: Implement manifest and build script**
+- [x] **Step 3: Implement manifest and build script**
 
 The manifest uses:
 
@@ -267,13 +267,13 @@ Build with Cargo offline sources generated from the committed lockfile. Install 
 
 `scripts/build-flatpak.sh` installs GNOME 50 SDK/runtime from Flathub when missing, builds into `build/flatpak`, exports `build/flatpak-repo`, and installs the local build with `--user --reinstall`.
 
-- [ ] **Step 4: Build and smoke-test Flatpak**
+- [x] **Step 4: Build and smoke-test Flatpak**
 
 Run: `bash scripts/build-flatpak.sh && bash scripts/test-flatpak.sh`
 
 Expected: package builds, metadata is present, and the CLI help smoke test succeeds.
 
-- [ ] **Step 5: Commit Flatpak packaging**
+- [x] **Step 5: Commit Flatpak packaging**
 
 ```bash
 git add packaging/flatpak scripts/build-flatpak.sh scripts/test-flatpak.sh

@@ -1,0 +1,43 @@
+app-id: io.github.roadmvn.Klypse
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: klypse
+
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  - --filesystem=xdg-pictures
+
+modules:
+  - name: klypse
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/klypse/cargo
+        CARGO_NET_OFFLINE: 'true'
+    build-commands:
+      - cargo build --workspace --release --locked --offline
+      - install -Dm0755 target/release/klypse /app/bin/klypse
+      - install -Dm0644 crates/klypse-app/resources/io.github.roadmvn.Klypse.desktop /app/share/applications/io.github.roadmvn.Klypse.desktop
+      - install -Dm0644 crates/klypse-app/resources/io.github.roadmvn.Klypse.metainfo.xml /app/share/metainfo/io.github.roadmvn.Klypse.metainfo.xml
+      - install -Dm0644 crates/klypse-app/resources/icons/hicolor/scalable/apps/io.github.roadmvn.Klypse.svg /app/share/icons/hicolor/scalable/apps/io.github.roadmvn.Klypse.svg
+      - install -Dm0644 crates/klypse-app/resources/io.github.roadmvn.Klypse.gschema.xml /app/share/glib-2.0/schemas/io.github.roadmvn.Klypse.gschema.xml
+      - glib-compile-schemas --strict /app/share/glib-2.0/schemas
+      - install -d /app/share/locale/fr/LC_MESSAGES
+      - msgfmt --check --check-format --output-file=/app/share/locale/fr/LC_MESSAGES/klypse.mo crates/klypse-app/resources/po/fr.po
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - .flatpak-builder
+          - .git
+          - .worktrees
+          - build
+          - target
+      - cargo-sources.json
