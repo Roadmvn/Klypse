@@ -1,5 +1,6 @@
 /*.png
 /.playwright-mcp/
+/.worktrees/
 /tmp/
 *.log
 *.bak
