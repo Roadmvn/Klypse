@@ -1,3 +1,3 @@
 fn main() {
-    println!("Klypse workspace ready");
+    std::process::exit(klypse_app::application::run().into());
 }

@@ -11,3 +11,11 @@ path = "src/lib.rs"
 [[bin]]
 name = "klypse"
 path = "src/main.rs"
+
+[dependencies]
+async-channel.workspace = true
+clap.workspace = true
+gtk.workspace = true
+klypse-domain = { path = "../klypse-domain" }
+libadwaita.workspace = true
+tracing.workspace = true
