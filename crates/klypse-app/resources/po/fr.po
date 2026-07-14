@@ -1,0 +1,70 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: Klypse 0.1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-07-14 00:00+0200\n"
+"PO-Revision-Date: 2026-07-14 00:00+0200\n"
+"Last-Translator: Klypse contributors\n"
+"Language-Team: French\n"
+"Language: fr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+msgid "Klypse"
+msgstr "Klypse"
+
+msgid "Your captures will appear here"
+msgstr "Vos captures apparaîtront ici"
+
+msgid "Capture area"
+msgstr "Capturer une zone"
+
+msgid "Capture screen"
+msgstr "Capturer l’écran"
+
+msgid "Capture window"
+msgstr "Capturer une fenêtre"
+
+msgid "Diagnostics"
+msgstr "Diagnostic"
+
+msgid "Display server"
+msgstr "Serveur d’affichage"
+
+msgid "Static capture"
+msgstr "Capture d’image"
+
+msgid "Video recording"
+msgstr "Enregistrement vidéo"
+
+msgid "GIF recording"
+msgstr "Enregistrement GIF"
+
+msgid "Global shortcuts"
+msgstr "Raccourcis globaux"
+
+msgid "Available"
+msgstr "Disponible"
+
+msgid "Unavailable"
+msgstr "Indisponible"
+
+msgid "Copy"
+msgstr "Copier"
+
+msgid "Edit"
+msgstr "Modifier"
+
+msgid "Reveal in Folder"
+msgstr "Afficher dans le dossier"
+
+msgid "Remove from Gallery"
+msgstr "Retirer de la galerie"
+
+msgid "Delete File"
+msgstr "Supprimer le fichier"
+
+msgid "Unable to open the capture library"
+msgstr "Impossible d’ouvrir la bibliothèque de captures"

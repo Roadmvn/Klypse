@@ -1,0 +1,23 @@
+[package]
+name = "klypse-media"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+gif.workspace = true
+gstreamer.workspace = true
+gstreamer-app.workspace = true
+gstreamer-pbutils.workspace = true
+gstreamer-video.workspace = true
+image.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

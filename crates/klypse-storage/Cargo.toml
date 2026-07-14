@@ -1,0 +1,20 @@
+[package]
+name = "klypse-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+chrono.workspace = true
+directories.workspace = true
+klypse-domain = { path = "../klypse-domain" }
+rusqlite.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
