@@ -39,6 +39,7 @@ RUN apt-get update \
         lintian \
         pkg-config \
         ripgrep \
+        xauth \
         xvfb \
     && rm -rf /var/lib/apt/lists/*
 

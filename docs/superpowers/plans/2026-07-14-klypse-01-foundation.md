@@ -101,7 +101,7 @@ packages=(
   gstreamer1.0-plugins-base gstreamer1.0-plugins-good
   gstreamer1.0-plugins-bad gstreamer1.0-libav
   libpipewire-0.3-dev libxcb1-dev libxcb-randr0-dev
-  libxcb-composite0-dev libxcb-xfixes0-dev xvfb dbus-x11
+  libxcb-composite0-dev libxcb-xfixes0-dev xauth xvfb dbus-x11
   flatpak flatpak-builder dpkg-dev debhelper appstream lintian
 )
 if sudo -n true 2>/dev/null; then

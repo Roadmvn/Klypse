@@ -30,6 +30,7 @@ packages=(
   lintian
   pkg-config
   ripgrep
+  xauth
   xvfb
 )
 
