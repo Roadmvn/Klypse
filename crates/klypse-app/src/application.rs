@@ -238,8 +238,9 @@ fn connect_command_line(application: &adw::Application, sender: Sender<AppComman
                 0.into()
             }
             Err(error) => {
-                eprint!("{error}");
-                2.into()
+                let exit_code = u8::try_from(error.exit_code()).unwrap_or(2);
+                let _ = error.print();
+                exit_code.into()
             }
         }
     });
