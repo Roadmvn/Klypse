@@ -24,8 +24,8 @@ clap = { version = "4", features = ["derive"] }
 directories = "6.0.0"
 gettext-rs = { version = "0.7.7", features = ["gettext-system"] }
 gstreamer = "0.25.3"
-gstreamer-app = "0.25.3"
-gstreamer-pbutils = "0.25.3"
+gstreamer-app = "0.25.2"
+gstreamer-pbutils = "0.25.2"
 gstreamer-video = "0.25.3"
 gtk = { package = "gtk4", version = "0.11.4", features = ["v4_10"] }
 image = "0.25.10"

@@ -49,4 +49,8 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     && cargo install cargo-deny --locked \
     && rm -rf /opt/cargo/registry /opt/cargo/git
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gstreamer1.0-tools \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /workspace

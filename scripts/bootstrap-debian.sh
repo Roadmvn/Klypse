@@ -16,6 +16,7 @@ packages=(
   gstreamer1.0-plugins-bad
   gstreamer1.0-plugins-base
   gstreamer1.0-plugins-good
+  gstreamer1.0-tools
   libadwaita-1-dev
   libglib2.0-bin
   libgstreamer-plugins-base1.0-dev

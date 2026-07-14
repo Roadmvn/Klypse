@@ -99,7 +99,7 @@ packages=(
   libgtk-4-dev libadwaita-1-dev libsqlite3-dev
   libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
   gstreamer1.0-plugins-base gstreamer1.0-plugins-good
-  gstreamer1.0-plugins-bad gstreamer1.0-libav
+  gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-tools
   libpipewire-0.3-dev libxcb1-dev libxcb-randr0-dev
   libxcb-composite0-dev libxcb-xfixes0-dev xauth xvfb dbus-x11
   flatpak flatpak-builder dpkg-dev debhelper appstream lintian
@@ -153,8 +153,8 @@ clap = { version = "4", features = ["derive"] }
 directories = "6.0.0"
 gettext-rs = { version = "0.7.7", features = ["gettext-system"] }
 gstreamer = "0.25.3"
-gstreamer-app = "0.25.3"
-gstreamer-pbutils = "0.25.3"
+gstreamer-app = "0.25.2"
+gstreamer-pbutils = "0.25.2"
 gstreamer-video = "0.25.3"
 gtk = { package = "gtk4", version = "0.11.4", features = ["v4_10"] }
 image = "0.25.10"
