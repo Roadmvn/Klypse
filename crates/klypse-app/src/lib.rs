@@ -6,6 +6,7 @@ pub mod editor;
 pub mod gallery;
 pub mod i18n;
 pub mod logging;
+pub mod recording;
 pub mod settings;
 pub mod ui;
 

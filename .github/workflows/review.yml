@@ -80,7 +80,7 @@ jobs:
       - name: Run X11 capture and shortcut tests under Xvfb
         run: >-
           xvfb-run -a cargo test -p klypse-platform
-          --test x11_capture --test hotkey_mapping --locked
+          --test x11_capture --test x11_recording_source --test hotkey_mapping --locked
 
       - name: Build release binary
         run: cargo build --workspace --release --locked

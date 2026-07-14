@@ -1789,6 +1789,7 @@ dependencies = [
  "klypse-platform",
  "klypse-storage",
  "libadwaita",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror",

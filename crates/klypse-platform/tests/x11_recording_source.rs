@@ -66,6 +66,10 @@ fn x11_source_records_a_short_webm() {
     {
         return;
     }
+    if x11rb::connect(None).is_err() {
+        eprintln!("X11 display unavailable; the Xvfb review job runs this test with a display");
+        return;
+    }
     let Ok(source) = X11RecordingSource::for_rect(
         Rect {
             x: 0,
