@@ -21,6 +21,7 @@ ashpd = { version = "0.13.12", default-features = false, features = ["async-io",
 async-channel = "2.5.0"
 async-trait = "0.1"
 chrono = { version = "0.4.45", features = ["serde"] }
+cairo-rs = "0.22.0"
 clap = { version = "4", features = ["derive"] }
 directories = "6.0.0"
 gettext-rs = { version = "0.7.7", features = ["gettext-system"] }
@@ -33,6 +34,8 @@ gstreamer-video = "0.25.3"
 gtk = { package = "gtk4", version = "0.11.4", features = ["v4_10"] }
 image = "0.25.10"
 libadwaita = { version = "0.9.2", features = ["v1_4"] }
+pango = "0.22.8"
+pangocairo = "0.22.0"
 rusqlite = { version = "0.40.1", features = ["chrono"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1"
