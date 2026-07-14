@@ -15,20 +15,43 @@ pub struct PipelineSource {
 
 impl PipelineSource {
     pub fn test_pattern(width: u32, height: u32) -> Result<Self, MediaError> {
+        Self::test_source(width, height, None, None)
+    }
+
+    pub fn test_frames(width: u32, height: u32, frames: u32, fps: u32) -> Result<Self, MediaError> {
+        if frames == 0 || fps == 0 {
+            return Err(MediaError::InvalidRecording(
+                "test recording frames and FPS must be positive".into(),
+            ));
+        }
+        Self::test_source(width, height, Some(frames), Some(fps))
+    }
+
+    fn test_source(
+        width: u32,
+        height: u32,
+        frames: Option<u32>,
+        fps: Option<u32>,
+    ) -> Result<Self, MediaError> {
         gst::init().map_err(gstreamer_error)?;
         validate_dimensions(width, height)?;
         let element = make_element("videotestsrc", Some("klypse-test-source"))?;
-        element.set_property("is-live", true);
+        element.set_property("is-live", frames.is_none());
+        if let Some(frames) = frames {
+            element.set_property("num-buffers", frames as i32);
+        }
         element.set_property_from_str("pattern", "ball");
-        let caps = gst::Caps::builder("video/x-raw")
+        let mut caps = gst::Caps::builder("video/x-raw")
             .field("width", width as i32)
-            .field("height", height as i32)
-            .build();
+            .field("height", height as i32);
+        if let Some(fps) = fps {
+            caps = caps.field("framerate", gst::Fraction::new(fps as i32, 1));
+        }
         Ok(Self {
             element,
             width,
             height,
-            input_caps: Some(caps),
+            input_caps: Some(caps.build()),
             guard: None,
         })
     }
