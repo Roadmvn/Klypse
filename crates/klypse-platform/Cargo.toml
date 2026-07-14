@@ -13,8 +13,12 @@ ashpd.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
 image.workspace = true
+gtk.workspace = true
 klypse-domain = { path = "../klypse-domain" }
 tempfile.workspace = true
 url.workspace = true
 uuid.workspace = true
 x11rb.workspace = true
+
+[dev-dependencies]
+futures-lite.workspace = true

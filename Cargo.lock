@@ -1717,6 +1717,8 @@ dependencies = [
  "ashpd",
  "async-trait",
  "chrono",
+ "futures-lite",
+ "gtk4",
  "image",
  "klypse-domain",
  "tempfile",

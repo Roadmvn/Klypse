@@ -24,6 +24,7 @@ chrono = { version = "0.4.45", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 directories = "6.0.0"
 gettext-rs = { version = "0.7.7", features = ["gettext-system"] }
+futures-lite = "2.6.1"
 gstreamer = "0.25.3"
 gstreamer-app = "0.25.2"
 gstreamer-pbutils = "0.25.2"
