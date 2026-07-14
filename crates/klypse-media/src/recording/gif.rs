@@ -199,9 +199,11 @@ impl GifPipeline {
         if let Some(thread) = self.automatic_thread.take() {
             let _ = thread.join();
         }
-        if !self.automatic_stop_due() {
-            let _ = self.pipeline.send_event(gst::event::Eos::new());
-        }
+        // The duration guard can fire while a live pipeline is still completing
+        // its asynchronous transition to Playing. Re-sending EOS here is safe
+        // when the guard's event was accepted, and guarantees finalization when
+        // that earlier event was rejected during the transition.
+        let _ = self.pipeline.send_event(gst::event::Eos::new());
         let bus = self
             .pipeline
             .bus()
