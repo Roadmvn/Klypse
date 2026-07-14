@@ -11,9 +11,10 @@ pub use hotkey::{
 };
 pub use portal::{
     AvailableTargetSet, PortalCaptureBackend, PortalCaptureClient, PortalClientError,
-    PortalHotkeyBackend, PortalHotkeyClientError, PortalSelection, PortalShortcutSpec,
-    PortalTarget, map_portal_hotkey_error, map_portal_target, portal_shortcut_specs,
-    validate_portal_bindings,
+    PortalHotkeyBackend, PortalHotkeyClientError, PortalRecordingClient,
+    PortalRecordingClientError, PortalRecordingSource, PortalScreencastOptions, PortalSelection,
+    PortalShortcutSpec, PortalStreamDescriptor, PortalTarget, map_portal_hotkey_error,
+    map_portal_target, portal_screencast_options, portal_shortcut_specs, validate_portal_bindings,
 };
 pub use selector::{BackendChoice, BackendSelector};
 pub use x11::{

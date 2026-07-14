@@ -1,16 +1,16 @@
-use std::{fs, path::PathBuf, time::Duration};
+use std::{any::Any, fs, path::PathBuf, time::Duration};
 
 use gstreamer as gst;
 use gstreamer::prelude::*;
 
 use crate::MediaError;
 
-#[derive(Clone)]
 pub struct PipelineSource {
     element: gst::Element,
     width: u32,
     height: u32,
     input_caps: Option<gst::Caps>,
+    guard: Option<Box<dyn Any + Send>>,
 }
 
 impl PipelineSource {
@@ -29,6 +29,7 @@ impl PipelineSource {
             width,
             height,
             input_caps: Some(caps),
+            guard: None,
         })
     }
 
@@ -43,15 +44,44 @@ impl PipelineSource {
             width,
             height,
             input_caps: None,
+            guard: None,
         })
+    }
+
+    pub fn from_element_with_guard<T>(
+        element: gst::Element,
+        width: u32,
+        height: u32,
+        guard: T,
+    ) -> Result<Self, MediaError>
+    where
+        T: Send + 'static,
+    {
+        let mut source = Self::from_element(element, width, height)?;
+        source.guard = Some(Box::new(guard));
+        Ok(source)
     }
 
     pub const fn dimensions(&self) -> (u32, u32) {
         (self.width, self.height)
     }
 
-    pub(crate) fn into_parts(self) -> (gst::Element, Option<gst::Caps>, u32, u32) {
-        (self.element, self.input_caps, self.width, self.height)
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        gst::Element,
+        Option<gst::Caps>,
+        u32,
+        u32,
+        Option<Box<dyn Any + Send>>,
+    ) {
+        (
+            self.element,
+            self.input_caps,
+            self.width,
+            self.height,
+            self.guard,
+        )
     }
 }
 

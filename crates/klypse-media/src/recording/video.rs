@@ -1,4 +1,4 @@
-use std::{path::Path, time::Duration};
+use std::{any::Any, path::Path, time::Duration};
 
 use gstreamer as gst;
 use gstreamer::prelude::*;
@@ -41,6 +41,7 @@ pub struct VideoPipeline {
     path: std::path::PathBuf,
     width: u32,
     height: u32,
+    _source_guard: Option<Box<dyn Any + Send>>,
 }
 
 impl VideoPipeline {
@@ -55,7 +56,7 @@ impl VideoPipeline {
         if let Some(parent) = destination.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let (source, source_caps, width, height) = source.into_parts();
+        let (source, source_caps, width, height, source_guard) = source.into_parts();
         let pipeline = gst::Pipeline::new();
         let input_caps = source_caps
             .map(|caps| {
@@ -106,6 +107,7 @@ impl VideoPipeline {
             path: destination,
             width,
             height,
+            _source_guard: source_guard,
         })
     }
 
@@ -144,11 +146,9 @@ impl VideoPipeline {
         let discoverer =
             gst_pbutils::Discoverer::new(FINALIZATION_TIMEOUT).map_err(finalization_error)?;
         let info = discoverer.discover_uri(&uri).map_err(finalization_error)?;
-        if info.video_streams().is_empty() {
-            return Err(finalization_error(
-                "the finalized WebM does not contain a video stream",
-            ));
-        }
+        let video = info.video_streams().into_iter().next().ok_or_else(|| {
+            finalization_error("the finalized WebM does not contain a video stream")
+        })?;
         let duration = info
             .duration()
             .map(|value| Duration::from_nanos(value.nseconds()))
@@ -156,8 +156,16 @@ impl VideoPipeline {
         Ok(RecordingArtifact {
             file_size: file_size(&self.path)?,
             path: self.path.clone(),
-            width: self.width,
-            height: self.height,
+            width: if video.width() == 0 {
+                self.width
+            } else {
+                video.width()
+            },
+            height: if video.height() == 0 {
+                self.height
+            } else {
+                video.height()
+            },
             duration,
         })
     }
