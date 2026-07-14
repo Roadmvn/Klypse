@@ -10,8 +10,11 @@ path = "src/lib.rs"
 
 [dependencies]
 ashpd.workspace = true
+async-channel.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
+futures-lite.workspace = true
+global-hotkey.workspace = true
 image.workspace = true
 gtk.workspace = true
 klypse-domain = { path = "../klypse-domain" }
@@ -21,4 +24,3 @@ uuid.workspace = true
 x11rb.workspace = true
 
 [dev-dependencies]
-futures-lite.workspace = true

@@ -1,13 +1,15 @@
 use std::{path::Path, sync::Arc};
 
 use async_channel::{Receiver, Sender};
+use gettextrs::gettext;
 use gtk::{gio, glib, prelude::*};
 use klypse_domain::{
-    AppCommand, CaptureBackend, CaptureRequest, CaptureSelection, CaptureTarget, KlypseError,
-    PixelRect,
+    AppCommand, CaptureBackend, CaptureKind, CaptureRequest, CaptureSelection, CaptureTarget,
+    HotkeyAction, KlypseError, PixelRect, RecordingRequest,
 };
 use klypse_platform::{
-    BackendChoice, BackendSelector, CapabilityReport, PortalCaptureBackend, X11CaptureBackend,
+    BackendChoice, BackendSelector, CapabilityReport, HotkeyBinding, HotkeyManager,
+    PortalCaptureBackend, X11CaptureBackend,
 };
 use klypse_storage::{AppPaths, CaptureRecord, CaptureRepository, open_database};
 use libadwaita as adw;
@@ -30,13 +32,128 @@ pub fn run() -> glib::ExitCode {
         .build();
     let (sender, receiver) = async_channel::unbounded();
     let (gallery_event_sender, gallery_event_receiver) = async_channel::unbounded();
+    let (hotkey_action_sender, hotkey_action_receiver) = async_channel::unbounded();
 
     connect_activate(&application, sender.clone(), gallery_event_receiver);
-    connect_command_line(&application, sender);
+    connect_command_line(&application, sender.clone());
     connect_open_capture_action(&application, gallery_event_sender.clone());
+    dispatch_hotkey_actions(hotkey_action_receiver, sender);
+    start_hotkeys(hotkey_action_sender);
     dispatch_commands(receiver, gallery_event_sender);
 
     application.run()
+}
+
+fn dispatch_hotkey_actions(actions: Receiver<HotkeyAction>, commands: Sender<AppCommand>) {
+    glib::spawn_future_local(async move {
+        while let Ok(action) = actions.recv().await {
+            match command_for_hotkey(action) {
+                Ok(command) => {
+                    let _ = commands.try_send(command);
+                }
+                Err(error) => tracing::warn!(%error, action = action.id(), "hotkey was ignored"),
+            }
+        }
+    });
+}
+
+fn start_hotkeys(actions: Sender<HotkeyAction>) {
+    glib::spawn_future_local(async move {
+        let settings = AppSettings::new().ok();
+        let (rebind_sender, rebind_receiver) = async_channel::unbounded();
+        let _handlers = settings.as_ref().map(|settings| {
+            settings.connect_shortcuts_changed(move || {
+                let _ = rebind_sender.try_send(());
+            })
+        });
+        let report = CapabilityReport::detect();
+        let mut manager = match HotkeyManager::start(
+            &report,
+            hotkey_bindings(settings.as_ref()),
+            actions,
+        )
+        .await
+        {
+            Ok(manager) => manager,
+            Err(error) => {
+                tracing::warn!(%error, "global shortcuts are unavailable; CLI fallback is active");
+                return;
+            }
+        };
+        tracing::info!(mode = ?manager.mode(), "global shortcut mode selected");
+        while rebind_receiver.recv().await.is_ok() {
+            if let Err(error) = manager.rebind(hotkey_bindings(settings.as_ref())).await {
+                tracing::warn!(%error, "global shortcut rebinding failed; previous bindings restored");
+            }
+        }
+        let _ = manager.stop().await;
+    });
+}
+
+fn hotkey_bindings(settings: Option<&AppSettings>) -> Vec<HotkeyBinding> {
+    [
+        (
+            HotkeyAction::CaptureArea,
+            "<Primary>Print",
+            gettext("Capture area"),
+        ),
+        (
+            HotkeyAction::CaptureScreen,
+            "Print",
+            gettext("Capture screen"),
+        ),
+        (
+            HotkeyAction::CaptureWindow,
+            "<Alt>Print",
+            gettext("Capture window"),
+        ),
+        (
+            HotkeyAction::RecordVideo,
+            "<Shift>Print",
+            gettext("Record video"),
+        ),
+        (
+            HotkeyAction::RecordGif,
+            "<Primary><Shift>Print",
+            gettext("Record GIF"),
+        ),
+    ]
+    .into_iter()
+    .map(|(action, fallback, description)| {
+        HotkeyBinding::new(
+            action,
+            settings
+                .and_then(|settings| settings.shortcut(action))
+                .unwrap_or_else(|| fallback.to_owned()),
+        )
+        .with_description(description)
+    })
+    .collect()
+}
+
+pub fn command_for_hotkey(action: HotkeyAction) -> Result<AppCommand, KlypseError> {
+    match action {
+        HotkeyAction::CaptureArea => Ok(AppCommand::Capture(CaptureRequest::new(
+            CaptureTarget::Area,
+        ))),
+        HotkeyAction::CaptureScreen => Ok(AppCommand::Capture(CaptureRequest::new(
+            CaptureTarget::Screen,
+        ))),
+        HotkeyAction::CaptureWindow => Ok(AppCommand::Capture(CaptureRequest::new(
+            CaptureTarget::ActiveWindow,
+        ))),
+        HotkeyAction::RecordVideo => {
+            RecordingRequest::new(CaptureKind::Video, CaptureTarget::Screen, None)
+                .map(AppCommand::Record)
+        }
+        HotkeyAction::RecordGif => RecordingRequest::new(
+            CaptureKind::Gif,
+            CaptureTarget::Area,
+            Some(std::time::Duration::from_secs(30)),
+        )
+        .map(AppCommand::Record),
+        HotkeyAction::StopRecording => Ok(AppCommand::StopRecording),
+    }
 }
 
 fn connect_activate(

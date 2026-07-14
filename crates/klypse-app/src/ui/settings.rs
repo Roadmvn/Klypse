@@ -1,7 +1,7 @@
 use gettextrs::gettext;
 use gtk::{gio, prelude::*};
 use klypse_domain::HotkeyAction;
-use klypse_platform::{CapabilityReport, CapabilityStatus};
+use klypse_platform::{CapabilityReport, CapabilityStatus, cli_fallback_commands};
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
@@ -36,6 +36,7 @@ pub fn present(parent: &adw::ApplicationWindow) {
     page.add(&general_group(parent, &settings));
     page.add(&gif_group(&settings));
     page.add(&shortcut_group(&settings));
+    page.add(&fallback_group());
     page.add(&diagnostics_group(&CapabilityReport::detect()));
     dialog.add(&page);
     dialog.present();
@@ -207,6 +208,43 @@ fn shortcut_group(settings: &AppSettings) -> adw::PreferencesGroup {
                 }
             }
         });
+        group.add(&row);
+    }
+    group
+}
+
+fn fallback_group() -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::builder()
+        .title(gettext("Desktop shortcut fallback"))
+        .description(gettext(
+            "Use these commands in your desktop shortcut settings if global registration is unavailable",
+        ))
+        .build();
+    for (action, command) in cli_fallback_commands() {
+        let title = match action {
+            HotkeyAction::CaptureArea => gettext("Capture area"),
+            HotkeyAction::CaptureScreen => gettext("Capture screen"),
+            HotkeyAction::CaptureWindow => gettext("Capture window"),
+            HotkeyAction::RecordVideo => gettext("Record video"),
+            HotkeyAction::RecordGif => gettext("Record GIF"),
+            HotkeyAction::StopRecording => gettext("Stop recording"),
+        };
+        let row = adw::ActionRow::builder()
+            .title(title)
+            .subtitle(command)
+            .build();
+        let copy = gtk::Button::builder()
+            .icon_name("edit-copy-symbolic")
+            .tooltip_text(gettext("Copy command"))
+            .valign(gtk::Align::Center)
+            .css_classes(["flat"])
+            .build();
+        copy.connect_clicked(move |_| {
+            if let Some(display) = gtk::gdk::Display::default() {
+                display.clipboard().set_text(command);
+            }
+        });
+        row.add_suffix(&copy);
         group.add(&row);
     }
     group

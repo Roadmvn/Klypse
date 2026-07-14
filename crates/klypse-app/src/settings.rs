@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use gtk::gio::{self, prelude::*};
 use klypse_domain::HotkeyAction;
@@ -126,6 +127,28 @@ impl AppSettings {
             });
         }
         self.set_string(key, value)
+    }
+
+    pub fn connect_shortcuts_changed(
+        &self,
+        callback: impl Fn() + 'static,
+    ) -> Vec<gtk::glib::SignalHandlerId> {
+        let callback = Rc::new(callback);
+        [
+            HotkeyAction::CaptureArea,
+            HotkeyAction::CaptureScreen,
+            HotkeyAction::CaptureWindow,
+            HotkeyAction::RecordVideo,
+            HotkeyAction::RecordGif,
+        ]
+        .into_iter()
+        .filter_map(shortcut_key)
+        .map(|key| {
+            let callback = Rc::clone(&callback);
+            self.inner
+                .connect_changed(Some(key), move |_, _| callback())
+        })
+        .collect()
     }
 
     fn set_bounded_uint(&self, key: &'static str, value: u32) -> Result<(), SettingsError> {
