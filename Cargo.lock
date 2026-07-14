@@ -830,10 +830,13 @@ dependencies = [
 name = "klypse-storage"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "directories",
+ "klypse-domain",
  "rusqlite",
  "tempfile",
  "thiserror",
+ "uuid",
 ]
 
 [[package]]
