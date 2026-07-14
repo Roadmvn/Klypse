@@ -1,0 +1,5 @@
+klypse (0.1.0-1) unstable; urgency=medium
+
+  * Initial Linux release with X11 and Wayland support.
+
+ -- Roadmvn <roadmvn@users.noreply.github.com>  Tue, 14 Jul 2026 23:10:00 +0200

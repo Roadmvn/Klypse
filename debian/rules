@@ -1,0 +1,30 @@
+#!/usr/bin/make -f
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cargo build --workspace --release --locked
+	desktop-file-validate crates/klypse-app/resources/io.github.roadmvn.Klypse.desktop
+	appstreamcli validate --no-net crates/klypse-app/resources/io.github.roadmvn.Klypse.metainfo.xml
+
+override_dh_auto_test:
+	cargo test --workspace --locked
+	bash scripts/check-translations.sh
+
+override_dh_auto_install:
+	install -D -m 0755 target/release/klypse debian/klypse/usr/bin/klypse
+	install -D -m 0644 crates/klypse-app/resources/io.github.roadmvn.Klypse.desktop \
+		debian/klypse/usr/share/applications/io.github.roadmvn.Klypse.desktop
+	install -D -m 0644 crates/klypse-app/resources/io.github.roadmvn.Klypse.metainfo.xml \
+		debian/klypse/usr/share/metainfo/io.github.roadmvn.Klypse.metainfo.xml
+	install -D -m 0644 crates/klypse-app/resources/icons/hicolor/scalable/apps/io.github.roadmvn.Klypse.svg \
+		debian/klypse/usr/share/icons/hicolor/scalable/apps/io.github.roadmvn.Klypse.svg
+	install -D -m 0644 crates/klypse-app/resources/io.github.roadmvn.Klypse.gschema.xml \
+		debian/klypse/usr/share/glib-2.0/schemas/io.github.roadmvn.Klypse.gschema.xml
+	mkdir -p debian/klypse/usr/share/locale/fr/LC_MESSAGES
+	msgfmt --check --check-format \
+		--output-file=debian/klypse/usr/share/locale/fr/LC_MESSAGES/klypse.mo \
+		crates/klypse-app/resources/po/fr.po

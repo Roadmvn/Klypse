@@ -1,0 +1,29 @@
+[Desktop Entry]
+Type=Application
+Name=Klypse
+Comment=Capture, record, and annotate your Linux desktop
+Comment[fr]=Capturez, enregistrez et annotez votre bureau Linux
+Exec=klypse
+Icon=io.github.roadmvn.Klypse
+Terminal=false
+StartupNotify=true
+Categories=Graphics;
+Keywords=screenshot;capture;screen;recording;GIF;annotation;
+Keywords[fr]=capture;écran;enregistrement;GIF;annotation;
+Actions=CaptureArea;CaptureScreen;RecordGif;
+X-GNOME-UsesNotifications=true
+
+[Desktop Action CaptureArea]
+Name=Capture Area
+Name[fr]=Capturer une zone
+Exec=klypse capture area
+
+[Desktop Action CaptureScreen]
+Name=Capture Screen
+Name[fr]=Capturer l’écran
+Exec=klypse capture screen
+
+[Desktop Action RecordGif]
+Name=Record GIF
+Name[fr]=Enregistrer un GIF
+Exec=klypse record gif area

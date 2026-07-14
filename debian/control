@@ -1,0 +1,41 @@
+Source: klypse
+Section: graphics
+Priority: optional
+Maintainer: Roadmvn <roadmvn@users.noreply.github.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ cargo,
+ rustc,
+ gettext,
+ libadwaita-1-dev,
+ libglib2.0-bin,
+ libgstreamer-plugins-base1.0-dev,
+ libgstreamer1.0-dev,
+ libgtk-4-dev,
+ libpipewire-0.3-dev,
+ libsqlite3-dev,
+ libxcb-composite0-dev,
+ libxcb-randr0-dev,
+ libxcb-xfixes0-dev,
+ libxcb1-dev,
+ pkg-config
+Standards-Version: 4.7.2
+Homepage: https://github.com/Roadmvn/Klypse
+Rules-Requires-Root: no
+
+Package: klypse
+Architecture: any
+Depends:
+ ${misc:Depends},
+ ${shlibs:Depends},
+ gstreamer1.0-libav,
+ gstreamer1.0-plugins-bad,
+ gstreamer1.0-plugins-base,
+ gstreamer1.0-plugins-good,
+ pipewire,
+ xdg-desktop-portal
+Recommends: xdg-desktop-portal-gtk | xdg-desktop-portal-kde
+Description: native Linux screenshot and screen recording utility
+ Klypse captures areas, screens, and windows on X11 and Wayland. It records
+ silent WebM videos and animated GIFs, offers a non-destructive annotation
+ editor, and stores captures in a local gallery without network requests.

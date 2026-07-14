@@ -173,7 +173,7 @@ git commit -m "test: harden localization accessibility and failures"
 **Interfaces:**
 - Produces: installable `klypse_0.1.0-1_amd64.deb`, desktop entry, AppStream metadata, icons, schemas, catalogs, and runtime dependency declarations.
 
-- [ ] **Step 1: Write a failing package-content test**
+- [x] **Step 1: Write a failing package-content test**
 
 ```bash
 #!/usr/bin/env bash
@@ -187,13 +187,13 @@ grep -q './usr/share/glib-2.0/schemas/io.github.roadmvn.Klypse.gschema.xml$' /tm
 grep -q './usr/share/locale/fr/LC_MESSAGES/klypse.mo$' /tmp/klypse-deb-contents
 ```
 
-- [ ] **Step 2: Verify package build is absent**
+- [x] **Step 2: Verify package build is absent**
 
 Run: `bash scripts/test-debian-package.sh ../klypse_0.1.0-1_amd64.deb`
 
 Expected: exit nonzero because the package does not exist.
 
-- [ ] **Step 3: Implement Debian metadata and installation rules**
+- [x] **Step 3: Implement Debian metadata and installation rules**
 
 `debian/control` declares `debhelper-compat (= 13)`, Rust/Cargo, GTK/libadwaita, SQLite, GStreamer development packages, gettext, and pkg-config as build dependencies. Runtime dependencies use `${shlibs:Depends}`, `${misc:Depends}`, portal, PipeWire, and GStreamer base/good/bad/libav plugins.
 
@@ -201,7 +201,7 @@ Expected: exit nonzero because the package does not exist.
 
 The SVG is an original code-native icon: a dark rounded square containing a high-contrast crop-frame motif and a small violet capture spark. It includes no text or third-party logo.
 
-- [ ] **Step 4: Build and test the Debian package**
+- [x] **Step 4: Build and test the Debian package**
 
 Run: `dpkg-buildpackage -us -uc -b`
 
@@ -211,7 +211,7 @@ Run: `bash scripts/test-debian-package.sh ../klypse_0.1.0-1_amd64.deb && lintian
 
 Expected: content test passes and lintian reports no error-severity tag.
 
-- [ ] **Step 5: Commit Debian packaging**
+- [x] **Step 5: Commit Debian packaging**
 
 ```bash
 git add crates/klypse-app/resources debian scripts/test-debian-package.sh

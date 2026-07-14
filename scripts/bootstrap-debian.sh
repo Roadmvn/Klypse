@@ -4,6 +4,7 @@ set -euo pipefail
 packages=(
   appstream
   build-essential
+  cargo
   curl
   dbus-x11
   debhelper
@@ -31,6 +32,7 @@ packages=(
   lintian
   pkg-config
   ripgrep
+  rustc
   xauth
   xvfb
 )

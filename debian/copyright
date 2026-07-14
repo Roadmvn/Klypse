@@ -1,0 +1,20 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: Klypse
+Source: https://github.com/Roadmvn/Klypse
+
+Files: *
+Copyright: 2026 Roadmvn and Klypse contributors
+License: GPL-3.0-or-later
+ This program is free software: you can redistribute it and/or modify it
+ under the terms of the GNU General Public License as published by the Free
+ Software Foundation, either version 3 of the License, or (at your option)
+ any later version.
+ .
+ On Debian systems, the complete text of the GNU General Public License
+ version 3 can be found in /usr/share/common-licenses/GPL-3.
+
+Files: crates/klypse-app/resources/io.github.roadmvn.Klypse.metainfo.xml
+Copyright: 2026 Roadmvn and Klypse contributors
+License: CC0-1.0
+ On Debian systems, the complete text of the CC0 1.0 Universal license can
+ be found in /usr/share/common-licenses/CC0-1.0.

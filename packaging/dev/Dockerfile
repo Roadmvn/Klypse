@@ -10,6 +10,7 @@ RUN apt-get update \
         appstream \
         build-essential \
         ca-certificates \
+        cargo \
         curl \
         dbus-daemon \
         dbus-x11 \
@@ -39,6 +40,7 @@ RUN apt-get update \
         lintian \
         pkg-config \
         ripgrep \
+        rustc \
         xauth \
         xvfb \
     && rm -rf /var/lib/apt/lists/*
