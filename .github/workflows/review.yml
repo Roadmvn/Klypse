@@ -1,0 +1,103 @@
+name: Review
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: review-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  rust-review:
+    name: Format, lint, test, and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Linux development libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential \
+            dbus-x11 \
+            gettext \
+            gstreamer1.0-libav \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-tools \
+            libadwaita-1-dev \
+            libgettextpo-dev \
+            libglib2.0-bin \
+            libgstreamer-plugins-base1.0-dev \
+            libgstreamer1.0-dev \
+            libgtk-4-dev \
+            libpipewire-0.3-dev \
+            libsqlite3-dev \
+            libxcb-composite0-dev \
+            libxcb-randr0-dev \
+            libxcb-xfixes0-dev \
+            libxcb1-dev \
+            pkg-config \
+            xauth \
+            xvfb
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Rust build data
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy with warnings denied
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Run headless workspace tests
+        run: cargo test --workspace --locked
+
+      - name: Run GTK content tests under Xvfb
+        run: xvfb-run -a cargo test -p klypse-app --test desktop_content --locked
+
+      - name: Run X11 capture and shortcut tests under Xvfb
+        run: >-
+          xvfb-run -a cargo test -p klypse-platform
+          --test x11_capture --test hotkey_mapping --locked
+
+      - name: Build release binary
+        run: cargo build --workspace --release --locked
+
+  dependency-review:
+    name: Dependency policy and advisories
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check dependency policy
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --all-features
