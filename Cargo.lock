@@ -1667,10 +1667,13 @@ name = "klypse-app"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "async-trait",
  "chrono",
  "clap",
+ "futures-lite",
  "gettext-rs",
  "gtk4",
+ "image",
  "klypse-domain",
  "klypse-media",
  "klypse-platform",

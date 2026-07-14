@@ -148,6 +148,9 @@ impl X11CaptureBackend {
             (CaptureTarget::Window, CaptureSelection::X11Window(window)) => {
                 self.window_rect(window)
             }
+            (CaptureTarget::Window, CaptureSelection::Automatic) => self
+                .active_window()
+                .and_then(|window| self.window_rect(window)),
             (CaptureTarget::ActiveWindow, _) => self
                 .active_window()
                 .and_then(|window| self.window_rect(window)),

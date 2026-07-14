@@ -16,7 +16,7 @@ use crate::gallery::GalleryController;
 const PAGE_SIZE: usize = 50;
 const THUMBNAIL_EDGE: u32 = 256;
 
-pub fn build() -> Result<gtk::Widget, StorageError> {
+pub fn build(refreshes: async_channel::Receiver<()>) -> Result<gtk::Widget, StorageError> {
     let paths = AppPaths::discover()?;
     let repository = CaptureRepository::new(open_database(&paths)?);
     let mut controller = GalleryController::new(repository, PAGE_SIZE)?;
@@ -78,7 +78,8 @@ pub fn build() -> Result<gtk::Widget, StorageError> {
             }
             *loading.borrow_mut() = true;
             let before = controller.borrow().items().len();
-            if let Ok(page) = controller.borrow_mut().load_next() {
+            let next_page = controller.borrow_mut().load_next();
+            if let Ok(page) = next_page {
                 let added = &page.items[before.min(page.items.len())..];
                 append_records(&model, added);
                 schedule_missing_thumbnails(added, &paths, controller.borrow().store(), &model);
@@ -94,6 +95,27 @@ pub fn build() -> Result<gtk::Widget, StorageError> {
         controller.borrow().store(),
         &model,
     );
+    glib::spawn_future_local({
+        let controller = Rc::clone(&controller);
+        let model = model.clone();
+        let paths = paths.clone();
+        let stack = stack.clone();
+        async move {
+            while refreshes.recv().await.is_ok() {
+                let refreshed = controller.borrow_mut().refresh();
+                if let Ok(page) = refreshed {
+                    replace_records(&model, &page.items);
+                    schedule_missing_thumbnails(
+                        &page.items,
+                        &paths,
+                        controller.borrow().store(),
+                        &model,
+                    );
+                    update_empty_state(&stack, model.n_items());
+                }
+            }
+        }
+    });
     Ok(stack.upcast())
 }
 

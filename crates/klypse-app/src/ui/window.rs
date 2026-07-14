@@ -6,7 +6,11 @@ use klypse_platform::{CapabilityReport, CapabilityStatus};
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-pub fn present(application: &adw::Application, sender: Sender<AppCommand>) {
+pub fn present(
+    application: &adw::Application,
+    sender: Sender<AppCommand>,
+    gallery_refreshes: async_channel::Receiver<()>,
+) {
     if let Some(window) = application.active_window() {
         window.present();
         return;
@@ -52,7 +56,7 @@ pub fn present(application: &adw::Application, sender: Sender<AppCommand>) {
     }
 
     content.append(&actions);
-    match super::gallery::build() {
+    match super::gallery::build(gallery_refreshes) {
         Ok(gallery) => content.append(&gallery),
         Err(error) => {
             let failure = gtk::Label::new(Some(&format!(
