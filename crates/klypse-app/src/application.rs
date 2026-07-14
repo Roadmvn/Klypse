@@ -1,7 +1,7 @@
 use std::{path::Path, sync::Arc};
 
 use async_channel::{Receiver, Sender};
-use gtk::{gdk, gio, glib, prelude::*};
+use gtk::{gio, glib, prelude::*};
 use klypse_domain::{
     AppCommand, CaptureBackend, CaptureRequest, CaptureSelection, CaptureTarget, KlypseError,
     PixelRect,
@@ -15,7 +15,11 @@ use libadwaita as adw;
 use crate::{
     APP_ID,
     capture::{CaptureEffects, CaptureOutcome, CaptureService, CaptureStage},
-    cli, ui,
+    cli,
+    desktop::{clipboard::copy_static_image, notification::notify_capture_saved},
+    gallery::GalleryEvent,
+    settings::AppSettings,
+    ui,
     ui::region_overlay::RegionOverlay,
 };
 
@@ -25,11 +29,12 @@ pub fn run() -> glib::ExitCode {
         .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)
         .build();
     let (sender, receiver) = async_channel::unbounded();
-    let (gallery_refresh_sender, gallery_refresh_receiver) = async_channel::unbounded();
+    let (gallery_event_sender, gallery_event_receiver) = async_channel::unbounded();
 
-    connect_activate(&application, sender.clone(), gallery_refresh_receiver);
+    connect_activate(&application, sender.clone(), gallery_event_receiver);
     connect_command_line(&application, sender);
-    dispatch_commands(receiver, gallery_refresh_sender);
+    connect_open_capture_action(&application, gallery_event_sender.clone());
+    dispatch_commands(receiver, gallery_event_sender);
 
     application.run()
 }
@@ -37,11 +42,32 @@ pub fn run() -> glib::ExitCode {
 fn connect_activate(
     application: &adw::Application,
     sender: Sender<AppCommand>,
-    gallery_refreshes: Receiver<()>,
+    gallery_events: Receiver<GalleryEvent>,
 ) {
     application.connect_activate(move |application| {
-        ui::window::present(application, sender.clone(), gallery_refreshes.clone());
+        ui::window::present(application, sender.clone(), gallery_events.clone());
     });
+}
+
+fn connect_open_capture_action(
+    application: &adw::Application,
+    gallery_events: Sender<GalleryEvent>,
+) {
+    let action = gio::SimpleAction::new("open-capture", Some(glib::VariantTy::STRING));
+    action.connect_activate({
+        let application = application.clone();
+        move |_, parameter| {
+            let Some(id) = parameter
+                .and_then(glib::Variant::str)
+                .and_then(|value| uuid::Uuid::parse_str(value).ok())
+            else {
+                return;
+            };
+            application.activate();
+            let _ = gallery_events.try_send(GalleryEvent::Select(id));
+        }
+    });
+    application.add_action(&action);
 }
 
 fn connect_command_line(application: &adw::Application, sender: Sender<AppCommand>) {
@@ -63,13 +89,13 @@ fn connect_command_line(application: &adw::Application, sender: Sender<AppComman
     });
 }
 
-fn dispatch_commands(receiver: Receiver<AppCommand>, gallery_refreshes: Sender<()>) {
+fn dispatch_commands(receiver: Receiver<AppCommand>, gallery_events: Sender<GalleryEvent>) {
     glib::spawn_future_local(async move {
         let mut runtime = None;
         while let Ok(command) = receiver.recv().await {
             tracing::info!(action = ?command, "received application command");
             if runtime.is_none() {
-                match ProductionCaptureRuntime::new(gallery_refreshes.clone()) {
+                match ProductionCaptureRuntime::new(gallery_events.clone()) {
                     Ok(value) => runtime = Some(value),
                     Err(error) => {
                         tracing::error!(%error, "capture runtime is unavailable");
@@ -94,11 +120,19 @@ fn dispatch_commands(receiver: Receiver<AppCommand>, gallery_refreshes: Sender<(
 struct ProductionCaptureRuntime {
     service: CaptureService,
     x11_backend: Option<Arc<X11CaptureBackend>>,
+    copy_after_capture: bool,
 }
 
 impl ProductionCaptureRuntime {
-    fn new(gallery_refreshes: Sender<()>) -> Result<Self, KlypseError> {
-        let paths = AppPaths::discover().map_err(storage_error)?;
+    fn new(gallery_events: Sender<GalleryEvent>) -> Result<Self, KlypseError> {
+        let preferences = AppSettings::new().ok();
+        let mut paths = AppPaths::discover().map_err(storage_error)?;
+        if let Some(directory) = preferences
+            .as_ref()
+            .and_then(AppSettings::capture_directory)
+        {
+            paths.captures = directory;
+        }
         let repository = CaptureRepository::new(open_database(&paths).map_err(storage_error)?);
         let report = CapabilityReport::detect();
         let choice = BackendSelector::select_capture(&report)?;
@@ -112,14 +146,26 @@ impl ProductionCaptureRuntime {
                     (Arc::new(PortalCaptureBackend::new(&paths.temporary)?), None)
                 }
             };
-        let effects = Arc::new(GtkCaptureEffects { gallery_refreshes });
+        let copy_after_capture = preferences
+            .as_ref()
+            .is_none_or(AppSettings::copy_after_capture);
+        let effects = Arc::new(GtkCaptureEffects {
+            gallery_events,
+            notify_after_capture: preferences
+                .as_ref()
+                .is_none_or(AppSettings::notify_after_capture),
+        });
         Ok(Self {
             service: CaptureService::new(backend, Arc::new(repository), paths, effects),
             x11_backend,
+            copy_after_capture,
         })
     }
 
     async fn execute(&self, mut command: AppCommand) -> CaptureOutcome {
+        if let AppCommand::Capture(request) = &mut command {
+            request.copy_to_clipboard &= self.copy_after_capture;
+        }
         if let (Some(backend), AppCommand::Capture(request)) = (&self.x11_backend, &mut command)
             && request.target == CaptureTarget::Area
             && request.selection == CaptureSelection::Automatic
@@ -149,7 +195,8 @@ impl ProductionCaptureRuntime {
 }
 
 struct GtkCaptureEffects {
-    gallery_refreshes: Sender<()>,
+    gallery_events: Sender<GalleryEvent>,
+    notify_after_capture: bool,
 }
 
 impl CaptureEffects for GtkCaptureEffects {
@@ -158,23 +205,21 @@ impl CaptureEffects for GtkCaptureEffects {
     }
 
     fn refresh_gallery(&self) -> Result<(), KlypseError> {
-        self.gallery_refreshes.try_send(()).map_err(|_| {
-            KlypseError::UnavailableCapability("gallery refresh channel is closed".into())
-        })
+        self.gallery_events
+            .try_send(GalleryEvent::Refresh)
+            .map_err(|_| {
+                KlypseError::UnavailableCapability("gallery refresh channel is closed".into())
+            })
     }
 
     fn copy_to_clipboard(&self, path: &Path) -> Result<(), KlypseError> {
-        let display = gdk::Display::default().ok_or_else(|| {
-            KlypseError::UnavailableCapability("clipboard display is unavailable".into())
-        })?;
-        let texture = gdk::Texture::from_filename(path)
-            .map_err(|error| KlypseError::Media(error.to_string()))?;
-        display.clipboard().set_texture(&texture);
-        Ok(())
+        copy_static_image(path)
     }
 
     fn notify_saved(&self, record: &CaptureRecord) {
-        tracing::debug!(capture_id = %record.id, "capture notification hook invoked");
+        if self.notify_after_capture && notify_capture_saved(record).is_err() {
+            tracing::warn!(capture_id = %record.id, "capture notification could not be sent");
+        }
     }
 }
 

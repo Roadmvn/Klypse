@@ -9,7 +9,7 @@ use libadwaita::prelude::*;
 pub fn present(
     application: &adw::Application,
     sender: Sender<AppCommand>,
-    gallery_refreshes: async_channel::Receiver<()>,
+    gallery_events: async_channel::Receiver<crate::gallery::GalleryEvent>,
 ) {
     if let Some(window) = application.active_window() {
         window.present();
@@ -66,7 +66,7 @@ pub fn present(
     }
 
     content.append(&actions);
-    match super::gallery::build(gallery_refreshes) {
+    match super::gallery::build(gallery_events) {
         Ok(gallery) => content.append(&gallery),
         Err(error) => {
             let failure = gtk::Label::new(Some(&format!(

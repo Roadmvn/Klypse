@@ -28,9 +28,19 @@ impl AppSettings {
     }
 
     fn from_backend(backend: Option<&gio::SettingsBackend>) -> Result<Self, SettingsError> {
-        let source = gio::SettingsSchemaSource::default().ok_or(SettingsError::MissingSchema)?;
-        let schema = source
-            .lookup(APP_ID, true)
+        let system = gio::SettingsSchemaSource::default();
+        let schema = system
+            .as_ref()
+            .and_then(|source| source.lookup(APP_ID, true))
+            .or_else(|| {
+                gio::SettingsSchemaSource::from_directory(
+                    env!("KLYPSE_BUILD_SCHEMA_DIR"),
+                    system.as_ref(),
+                    false,
+                )
+                .ok()?
+                .lookup(APP_ID, true)
+            })
             .ok_or(SettingsError::MissingSchema)?;
         Ok(Self {
             inner: gio::Settings::new_full(&schema, backend, None),

@@ -1,6 +1,7 @@
 pub mod application;
 pub mod capture;
 pub mod cli;
+pub mod desktop;
 pub mod gallery;
 pub mod i18n;
 pub mod logging;

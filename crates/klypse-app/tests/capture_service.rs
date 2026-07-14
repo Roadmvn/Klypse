@@ -72,10 +72,13 @@ impl CaptureEffects for RecordingEffects {
     }
 
     fn copy_to_clipboard(&self, _path: &std::path::Path) -> Result<(), KlypseError> {
+        self.events.lock().unwrap().push("copy");
         Ok(())
     }
 
-    fn notify_saved(&self, _record: &CaptureRecord) {}
+    fn notify_saved(&self, _record: &CaptureRecord) {
+        self.events.lock().unwrap().push("notify");
+    }
 }
 
 struct CaptureServiceFixture {
@@ -140,9 +143,13 @@ impl CaptureServiceFixture {
     }
 
     fn execute_area(&self) -> CaptureOutcome {
+        self.execute_area_with_copy(false)
+    }
+
+    fn execute_area_with_copy(&self, copy_to_clipboard: bool) -> CaptureOutcome {
         futures_lite::future::block_on(self.service.execute(AppCommand::Capture(CaptureRequest {
             target: CaptureTarget::Area,
-            copy_to_clipboard: false,
+            copy_to_clipboard,
             selection: CaptureSelection::Automatic,
         })))
     }
@@ -161,7 +168,14 @@ fn successful_capture_is_persisted_before_gallery_refresh() {
     assert!(matches!(outcome, CaptureOutcome::Saved(_)));
     assert_eq!(
         fixture.events(),
-        ["backend", "file", "database", "thumbnail", "gallery"]
+        [
+            "backend",
+            "file",
+            "database",
+            "thumbnail",
+            "gallery",
+            "notify"
+        ]
     );
     assert_eq!(fixture.repository.list_page(0, 50).unwrap().len(), 1);
 }
@@ -171,8 +185,20 @@ fn cancellation_creates_no_file_or_row() {
     let fixture = CaptureServiceFixture::cancelled();
 
     assert!(matches!(fixture.execute_area(), CaptureOutcome::Cancelled));
+    assert_eq!(fixture.events(), ["backend"]);
     assert!(fixture.repository.list_page(0, 50).unwrap().is_empty());
     assert!(fixture.paths.captures.read_dir().unwrap().next().is_none());
+}
+
+#[test]
+fn copy_and_notification_run_only_after_a_successful_capture() {
+    let fixture = CaptureServiceFixture::successful();
+
+    assert!(matches!(
+        fixture.execute_area_with_copy(true),
+        CaptureOutcome::Saved(_)
+    ));
+    assert!(fixture.events().ends_with(&["copy", "notify"]));
 }
 
 #[test]

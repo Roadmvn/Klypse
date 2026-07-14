@@ -11,12 +11,15 @@ use klypse_storage::{
 };
 use uuid::Uuid;
 
-use crate::gallery::GalleryController;
+use crate::{
+    desktop::{clipboard::copy_record, drag::install_drag_source},
+    gallery::{GalleryController, GalleryEvent},
+};
 
 const PAGE_SIZE: usize = 50;
 const THUMBNAIL_EDGE: u32 = 256;
 
-pub fn build(refreshes: async_channel::Receiver<()>) -> Result<gtk::Widget, StorageError> {
+pub fn build(events: async_channel::Receiver<GalleryEvent>) -> Result<gtk::Widget, StorageError> {
     let paths = AppPaths::discover()?;
     let repository = CaptureRepository::new(open_database(&paths)?);
     let mut controller = GalleryController::new(repository, PAGE_SIZE)?;
@@ -101,7 +104,7 @@ pub fn build(refreshes: async_channel::Receiver<()>) -> Result<gtk::Widget, Stor
         let paths = paths.clone();
         let stack = stack.clone();
         async move {
-            while refreshes.recv().await.is_ok() {
+            while let Ok(event) = events.recv().await {
                 let refreshed = controller.borrow_mut().refresh();
                 if let Ok(page) = refreshed {
                     replace_records(&model, &page.items);
@@ -112,6 +115,9 @@ pub fn build(refreshes: async_channel::Receiver<()>) -> Result<gtk::Widget, Stor
                         &model,
                     );
                     update_empty_state(&stack, model.n_items());
+                    if let GalleryEvent::Select(id) = event {
+                        select_record(&selection, &model, id);
+                    }
                 }
             }
         }
@@ -147,6 +153,15 @@ fn gallery_factory() -> gtk::SignalListItemFactory {
         card.append(&picture);
         card.append(&kind);
         card.append(&timestamp);
+        install_drag_source(&card, {
+            let list_item = list_item.clone();
+            move || {
+                list_item
+                    .item()
+                    .and_downcast::<glib::BoxedAnyObject>()
+                    .map(|item| item.borrow::<CaptureRecord>().clone())
+            }
+        });
         list_item.set_child(Some(&card));
     });
     factory.connect_bind(|_, list_item| {
@@ -227,6 +242,29 @@ fn detail_pane(
             edit.set_sensitive(record.is_some_and(|record| record.kind == CaptureKind::Screenshot));
         }
     });
+    copy.connect_clicked({
+        let selection = selection.clone();
+        move |_| {
+            if let Some(record) = selected_record(&selection)
+                && copy_record(&record).is_err()
+            {
+                tracing::warn!(capture_id = %record.id, "capture could not be copied");
+            }
+        }
+    });
+    reveal.connect_clicked({
+        let selection = selection.clone();
+        move |_| {
+            let Some(record) = selected_record(&selection) else {
+                return;
+            };
+            let directory = record.path.parent().unwrap_or(&record.path);
+            let uri = gio::File::for_path(directory).uri();
+            if gio::AppInfo::launch_default_for_uri(&uri, gio::AppLaunchContext::NONE).is_err() {
+                tracing::warn!(capture_id = %record.id, "capture folder could not be opened");
+            }
+        }
+    });
     remove.connect_clicked({
         let selection = selection.clone();
         let model = model.clone();
@@ -269,6 +307,18 @@ fn selected_record(selection: &gtk::SingleSelection) -> Option<CaptureRecord> {
         .selected_item()
         .and_downcast::<glib::BoxedAnyObject>()
         .map(|item| item.borrow::<CaptureRecord>().clone())
+}
+
+fn select_record(selection: &gtk::SingleSelection, model: &gio::ListStore, id: Uuid) {
+    for index in 0..model.n_items() {
+        let Some(item) = model.item(index).and_downcast::<glib::BoxedAnyObject>() else {
+            continue;
+        };
+        if item.borrow::<CaptureRecord>().id == id {
+            selection.set_selected(index);
+            break;
+        }
+    }
 }
 
 fn append_records(model: &gio::ListStore, records: &[CaptureRecord]) {
