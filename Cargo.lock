@@ -1680,6 +1680,7 @@ dependencies = [
  "klypse-storage",
  "libadwaita",
  "tempfile",
+ "thiserror",
  "tracing",
  "tracing-subscriber",
  "uuid",

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="io.github.roadmvn.Klypse" path="/io/github/roadmvn/Klypse/">
+    <key name="capture-directory" type="s">
+      <default>''</default>
+      <summary>Capture directory</summary>
+    </key>
+    <key name="copy-after-capture" type="b">
+      <default>true</default>
+      <summary>Copy screenshots after capture</summary>
+    </key>
+    <key name="notify-after-capture" type="b">
+      <default>true</default>
+      <summary>Notify after capture</summary>
+    </key>
+    <key name="language" type="s">
+      <default>'system'</default>
+      <summary>Application language</summary>
+    </key>
+    <key name="gif-fps" type="u">
+      <default>12</default>
+      <range min="1" max="30"/>
+      <summary>GIF frames per second</summary>
+    </key>
+    <key name="gif-max-seconds" type="u">
+      <default>30</default>
+      <range min="1" max="30"/>
+      <summary>Maximum GIF duration</summary>
+    </key>
+    <key name="shortcut-area" type="s">
+      <default>'&lt;Primary&gt;Print'</default>
+      <summary>Area capture shortcut</summary>
+    </key>
+    <key name="shortcut-screen" type="s">
+      <default>'Print'</default>
+      <summary>Screen capture shortcut</summary>
+    </key>
+    <key name="shortcut-window" type="s">
+      <default>'&lt;Alt&gt;Print'</default>
+      <summary>Window capture shortcut</summary>
+    </key>
+    <key name="shortcut-video" type="s">
+      <default>'&lt;Shift&gt;Print'</default>
+      <summary>Video recording shortcut</summary>
+    </key>
+    <key name="shortcut-gif" type="s">
+      <default>'&lt;Primary&gt;&lt;Shift&gt;Print'</default>
+      <summary>GIF recording shortcut</summary>
+    </key>
+  </schema>
+</schemalist>

@@ -23,7 +23,17 @@ pub fn present(
         .default_height(700)
         .build();
     let toolbar_view = adw::ToolbarView::new();
-    toolbar_view.add_top_bar(&adw::HeaderBar::new());
+    let header = adw::HeaderBar::new();
+    let preferences = gtk::Button::builder()
+        .icon_name("preferences-system-symbolic")
+        .tooltip_text(gettext("Preferences"))
+        .build();
+    preferences.connect_clicked({
+        let window = window.clone();
+        move |_| super::settings::present(&window)
+    });
+    header.pack_end(&preferences);
+    toolbar_view.add_top_bar(&header);
 
     let content = gtk::Box::builder()
         .orientation(Orientation::Vertical)
