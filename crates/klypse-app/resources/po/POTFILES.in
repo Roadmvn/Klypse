@@ -1,0 +1,9 @@
+crates/klypse-app/src/application.rs
+crates/klypse-app/src/desktop/notification.rs
+crates/klypse-app/src/ui/editor.rs
+crates/klypse-app/src/ui/gallery.rs
+crates/klypse-app/src/ui/recording.rs
+crates/klypse-app/src/ui/recovery.rs
+crates/klypse-app/src/ui/region_overlay.rs
+crates/klypse-app/src/ui/settings.rs
+crates/klypse-app/src/ui/window.rs

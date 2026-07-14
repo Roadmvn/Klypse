@@ -68,6 +68,9 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Check French translations
+        run: bash scripts/check-translations.sh
+
       - name: Run Clippy with warnings denied
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
@@ -77,7 +80,8 @@ jobs:
       - name: Run GTK content tests under Xvfb
         run: >-
           xvfb-run -a cargo test -p klypse-app
-          --test desktop_content --test editor_view --test recording_ui
+          --test accessibility --test desktop_content --test editor_view
+          --test failure_matrix --test gallery_scale --test recording_ui
           --test recovery_ui --locked
 
       - name: Run X11 capture and shortcut tests under Xvfb

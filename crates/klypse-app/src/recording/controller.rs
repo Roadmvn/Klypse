@@ -241,6 +241,13 @@ impl RecordingController {
         Ok(record)
     }
 
+    pub fn acknowledge_failure(&mut self) -> Result<(), KlypseError> {
+        self.machine.acknowledge_failure().map_err(media_error)?;
+        self.active = None;
+        self.effects.state_changed(RecordingUiState::Idle);
+        Ok(())
+    }
+
     fn write_recovery_marker(&self, marker: &RecoveryMarker) -> Result<(), KlypseError> {
         self.paths.ensure().map_err(storage_error)?;
         let mut temporary = NamedTempFile::new_in(&self.paths.temporary)?;

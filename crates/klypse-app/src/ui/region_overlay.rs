@@ -1,5 +1,6 @@
 use std::{cell::RefCell, path::Path, rc::Rc};
 
+use gettextrs::gettext;
 use gtk::{gdk, glib, prelude::*};
 use klypse_domain::KlypseError;
 use klypse_platform::{Rect, normalize_selection};
@@ -49,7 +50,7 @@ impl RegionOverlay {
         let state = Rc::new(RefCell::new(RegionSelectionState::default()));
         let (sender, receiver) = async_channel::bounded(1);
         let window = gtk::Window::builder()
-            .title("Klypse region selector")
+            .title(gettext("Klypse region selector"))
             .decorated(false)
             .modal(true)
             .build();
@@ -63,6 +64,9 @@ impl RegionOverlay {
             .vexpand(true)
             .can_focus(true)
             .build();
+        let selector_label = gettext("Drag to select a capture region, then press Enter");
+        drawing.set_tooltip_text(Some(&selector_label));
+        super::set_accessible_label(&drawing, &selector_label);
         drawing.set_draw_func({
             let state = Rc::clone(&state);
             move |_, context, _, _| {

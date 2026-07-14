@@ -30,6 +30,7 @@ pub fn present(
         .icon_name("preferences-system-symbolic")
         .tooltip_text(gettext("Preferences"))
         .build();
+    super::set_accessible_label(&preferences, &gettext("Preferences"));
     preferences.connect_clicked({
         let window = window.clone();
         move |_| super::settings::present(&window)

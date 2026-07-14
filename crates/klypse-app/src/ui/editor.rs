@@ -103,6 +103,14 @@ impl EditorView {
         let copy = gtk::Button::with_label(&gettext("Copy"));
         let export = gtk::Button::with_label(&gettext("Export"));
         export.set_sensitive(actions.export.is_some());
+        for (button, label) in [
+            (&undo, gettext("Undo")),
+            (&redo, gettext("Redo")),
+            (&zoom_out, gettext("Zoom out")),
+            (&zoom_in, gettext("Zoom in")),
+        ] {
+            super::set_accessible_label(button, &label);
+        }
         for widget in [
             undo.clone().upcast::<gtk::Widget>(),
             redo.clone().upcast(),
@@ -171,6 +179,9 @@ impl EditorView {
             .hexpand(true)
             .vexpand(true)
             .build();
+        let canvas_label = gettext("Annotation canvas");
+        canvas.set_tooltip_text(Some(&canvas_label));
+        super::set_accessible_label(&canvas, &canvas_label);
         let overlay = gtk::Overlay::new();
         overlay.set_child(Some(&picture));
         overlay.add_overlay(&canvas);
@@ -194,13 +205,16 @@ impl EditorView {
         let color = gtk::ColorDialogButton::new(None::<gtk::ColorDialog>);
         color.set_rgba(&gdk::RGBA::new(0.93, 0.12, 0.18, 1.0));
         color.set_tooltip_text(Some(&gettext("Color")));
+        super::set_accessible_label(&color, &gettext("Color"));
         let stroke = gtk::SpinButton::with_range(1.0, 32.0, 1.0);
         stroke.set_value(3.0);
         stroke.set_tooltip_text(Some(&gettext("Stroke width")));
+        super::set_accessible_label(&stroke, &gettext("Stroke width"));
         let text = gtk::Entry::builder()
             .placeholder_text(gettext("Type text and press Enter"))
             .hexpand(true)
             .build();
+        super::set_accessible_label(&text, &gettext("Annotation text"));
         contextual.append(&color);
         contextual.append(&stroke);
         contextual.append(&text);

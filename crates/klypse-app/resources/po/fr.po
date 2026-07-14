@@ -134,3 +134,168 @@ msgstr "Miniature obsolète"
 
 msgid "Unknown file"
 msgstr "Fichier inconnu"
+
+msgid "Record video"
+msgstr "Enregistrer une vidéo"
+
+msgid "Capture"
+msgstr "Capture"
+
+msgid "Capture saved"
+msgstr "Capture enregistrée"
+
+msgid "Undo"
+msgstr "Annuler"
+
+msgid "Redo"
+msgstr "Rétablir"
+
+msgid "Zoom out"
+msgstr "Réduire le zoom"
+
+msgid "Zoom in"
+msgstr "Agrandir le zoom"
+
+msgid "Save"
+msgstr "Enregistrer"
+
+msgid "Export"
+msgstr "Exporter"
+
+msgid "Rectangle"
+msgstr "Rectangle"
+
+msgid "Ellipse"
+msgstr "Ellipse"
+
+msgid "Line"
+msgstr "Ligne"
+
+msgid "Arrow"
+msgstr "Flèche"
+
+msgid "Text"
+msgstr "Texte"
+
+msgid "Freehand"
+msgstr "Dessin à main levée"
+
+msgid "Pixelate"
+msgstr "Pixeliser"
+
+msgid "Blur"
+msgstr "Flouter"
+
+msgid "Crop"
+msgstr "Recadrer"
+
+msgid "Color"
+msgstr "Couleur"
+
+msgid "Stroke width"
+msgstr "Épaisseur du trait"
+
+msgid "Type text and press Enter"
+msgstr "Saisissez du texte puis appuyez sur Entrée"
+
+msgid "Edit screenshot"
+msgstr "Modifier la capture d’écran"
+
+msgid "Save your changes?"
+msgstr "Enregistrer vos modifications ?"
+
+msgid "The original screenshot will remain unchanged."
+msgstr "La capture d’écran d’origine restera inchangée."
+
+msgid "Cancel"
+msgstr "Annuler"
+
+msgid "Annotations cannot be opened"
+msgstr "Impossible d’ouvrir les annotations"
+
+msgid "Reset the annotations to edit the original screenshot again?"
+msgstr "Réinitialiser les annotations pour modifier à nouveau la capture d’écran d’origine ?"
+
+msgid "Reset annotations"
+msgstr "Réinitialiser les annotations"
+
+msgid "Unable to open preferences"
+msgstr "Impossible d’ouvrir les préférences"
+
+msgid "Preferences"
+msgstr "Préférences"
+
+msgid "General"
+msgstr "Général"
+
+msgid "Capture folder"
+msgstr "Dossier des captures"
+
+msgid "Choose a capture folder"
+msgstr "Choisir un dossier pour les captures"
+
+msgid "Copy screenshots after capture"
+msgstr "Copier les captures d’écran après la capture"
+
+msgid "Notify after capture"
+msgstr "Afficher une notification après la capture"
+
+msgid "System"
+msgstr "Système"
+
+msgid "English"
+msgstr "Anglais"
+
+msgid "French"
+msgstr "Français"
+
+msgid "Language"
+msgstr "Langue"
+
+msgid "Frames per second"
+msgstr "Images par seconde"
+
+msgid "Maximum duration (seconds)"
+msgstr "Durée maximale (secondes)"
+
+msgid "Keyboard shortcuts"
+msgstr "Raccourcis clavier"
+
+msgid "GTK accelerator syntax is supported"
+msgstr "La syntaxe des accélérateurs GTK est prise en charge"
+
+msgid "Desktop shortcut fallback"
+msgstr "Raccourcis de bureau de secours"
+
+msgid "Use these commands in your desktop shortcut settings if global registration is unavailable"
+msgstr "Utilisez ces commandes dans les raccourcis de votre bureau si l’enregistrement global est indisponible"
+
+msgid "Copy command"
+msgstr "Copier la commande"
+
+msgid "Annotation canvas"
+msgstr "Zone de dessin des annotations"
+
+msgid "Annotation text"
+msgstr "Texte de l’annotation"
+
+msgid "Capture gallery"
+msgstr "Galerie des captures"
+
+msgid "Screenshot"
+msgstr "Capture d’écran"
+
+msgid "Video"
+msgstr "Vidéo"
+
+msgid "GIF"
+msgstr "GIF"
+
+msgid "Dismiss error"
+msgstr "Fermer l’erreur"
+
+msgid "Klypse region selector"
+msgstr "Sélecteur de zone Klypse"
+
+msgid "Drag to select a capture region, then press Enter"
+msgstr "Faites glisser pour sélectionner une zone, puis appuyez sur Entrée"

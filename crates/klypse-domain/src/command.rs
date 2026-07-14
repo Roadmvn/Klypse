@@ -29,4 +29,5 @@ pub enum AppCommand {
     Capture(CaptureRequest),
     Record(RecordingRequest),
     StopRecording,
+    AcknowledgeRecordingFailure,
 }

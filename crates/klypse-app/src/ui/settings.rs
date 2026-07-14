@@ -62,6 +62,7 @@ fn general_group(parent: &adw::ApplicationWindow, settings: &AppSettings) -> adw
         .valign(gtk::Align::Center)
         .css_classes(["flat"])
         .build();
+    super::set_accessible_label(&browse, &gettext("Choose a capture folder"));
     directory.add_suffix(&browse);
     directory.connect_changed({
         let settings = settings.clone();
@@ -240,6 +241,7 @@ fn fallback_group() -> adw::PreferencesGroup {
             .valign(gtk::Align::Center)
             .css_classes(["flat"])
             .build();
+        super::set_accessible_label(&copy, &gettext("Copy command"));
         copy.connect_clicked(move |_| {
             if let Some(display) = gtk::gdk::Display::default() {
                 display.clipboard().set_text(command);

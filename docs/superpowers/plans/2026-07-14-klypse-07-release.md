@@ -110,7 +110,7 @@ git commit -m "feat: recover interrupted capture sessions"
 - Consumes: every visible UI string, gallery controller, capture/recording services, and fake failure adapters.
 - Produces: complete English/French UI catalogs and automated release-level behavior checks.
 
-- [ ] **Step 1: Add failing catalog and accessibility checks**
+- [x] **Step 1: Add failing catalog and accessibility checks**
 
 ```bash
 #!/usr/bin/env bash
@@ -130,13 +130,13 @@ fn every_interactive_control_has_an_accessible_name() {
 }
 ```
 
-- [ ] **Step 2: Verify quality tests fail**
+- [x] **Step 2: Verify quality tests fail**
 
 Run: `xvfb-run -a cargo test -p klypse-app --test accessibility --test gallery_scale --test failure_matrix`
 
 Expected: tests fail with missing labels, untranslated strings, or absent scale/failure fixtures.
 
-- [ ] **Step 3: Complete UI quality and failure coverage**
+- [x] **Step 3: Complete UI quality and failure coverage**
 
 Translate every user-visible string and compile `fr.mo`. Add accessible names/descriptions to capture actions, gallery tiles, editor tools, recording state, diagnostics, recovery actions, and settings rows. Ensure keyboard traversal reaches all actions and no recording/error state relies on color alone.
 
@@ -144,13 +144,13 @@ The scale test inserts 1,000 records, loads the first page in under 250 ms on th
 
 The failure matrix injects permission denial, portal cancellation, missing GStreamer element, full-disk write, database insert failure, thumbnail failure, EOS timeout, malformed annotation JSON, and interrupted GIF. Assert the gallery remains consistent and the app returns to an actionable state.
 
-- [ ] **Step 4: Run localization and quality gates**
+- [x] **Step 4: Run localization and quality gates**
 
 Run: `bash scripts/check-translations.sh && xvfb-run -a cargo test -p klypse-app --test accessibility --test gallery_scale --test failure_matrix`
 
 Expected: no untranslated catalog entries and all UI/failure tests pass.
 
-- [ ] **Step 5: Commit quality hardening**
+- [x] **Step 5: Commit quality hardening**
 
 ```bash
 git add crates/klypse-app scripts/check-translations.sh

@@ -105,22 +105,28 @@ pub fn build(
     timer.add_css_class("monospace");
     let stop = gtk::Button::with_label(&gettext("Stop recording"));
     stop.add_css_class("destructive-action");
+    let dismiss_commands = commands.clone();
     stop.connect_clicked(move |_| {
         let _ = commands.try_send(AppCommand::StopRecording);
+    });
+    let dismiss = gtk::Button::with_label(&gettext("Dismiss error"));
+    dismiss.connect_clicked(move |_| {
+        let _ = dismiss_commands.try_send(AppCommand::AcknowledgeRecordingFailure);
     });
     active.append(&status);
     active.append(&timer);
     active.append(&stop);
+    active.append(&dismiss);
     stack.add_named(&active, Some("active"));
     root.append(&stack);
 
-    refresh(&stack, &status, &timer, &stop, &presentation);
+    refresh(&stack, &status, &timer, &stop, &dismiss, &presentation);
     let weak_root = root.downgrade();
     glib::timeout_add_local(Duration::from_millis(250), move || {
         if weak_root.upgrade().is_none() {
             return glib::ControlFlow::Break;
         }
-        refresh(&stack, &status, &timer, &stop, &presentation);
+        refresh(&stack, &status, &timer, &stop, &dismiss, &presentation);
         glib::ControlFlow::Continue
     });
     root
@@ -195,6 +201,7 @@ fn refresh(
     status: &gtk::Label,
     timer: &gtk::Label,
     stop: &gtk::Button,
+    dismiss: &gtk::Button,
     presentation: &Arc<Mutex<RecordingPresentation>>,
 ) {
     let Ok(presentation) = presentation.lock() else {
@@ -219,6 +226,8 @@ fn refresh(
     status.set_label(&status_text);
     timer.set_label(&time_label(snapshot));
     stop.set_sensitive(snapshot.state == RecordingUiState::Recording);
+    stop.set_visible(snapshot.state != RecordingUiState::Failed);
+    dismiss.set_visible(snapshot.state == RecordingUiState::Failed);
 }
 
 fn time_label(snapshot: RecordingSnapshot) -> String {

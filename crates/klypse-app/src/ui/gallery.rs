@@ -21,6 +21,13 @@ const THUMBNAIL_EDGE: u32 = 256;
 
 pub fn build(events: async_channel::Receiver<GalleryEvent>) -> Result<gtk::Widget, StorageError> {
     let paths = AppPaths::discover()?;
+    build_with_paths(events, paths)
+}
+
+pub fn build_with_paths(
+    events: async_channel::Receiver<GalleryEvent>,
+    paths: AppPaths,
+) -> Result<gtk::Widget, StorageError> {
     let repository = CaptureRepository::new(open_database(&paths)?);
     let mut controller = GalleryController::new(repository, PAGE_SIZE)?;
     controller.load_initial()?;
@@ -37,6 +44,9 @@ pub fn build(events: async_channel::Receiver<GalleryEvent>) -> Result<gtk::Widge
         .min_columns(1)
         .single_click_activate(true)
         .build();
+    let gallery_label = gettext("Capture gallery");
+    grid.set_tooltip_text(Some(&gallery_label));
+    super::set_accessible_label(&grid, &gallery_label);
     let scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vexpand(true)
@@ -139,6 +149,7 @@ fn gallery_factory() -> gtk::SignalListItemFactory {
             .margin_start(6)
             .margin_end(6)
             .build();
+        card.add_css_class("gallery-card");
         let picture = gtk::Picture::builder()
             .width_request(THUMBNAIL_EDGE as i32)
             .height_request(160)
@@ -197,6 +208,16 @@ fn gallery_factory() -> gtk::SignalListItemFactory {
                 .format("%x %X")
                 .to_string(),
         );
+        let accessible_label = format!(
+            "{} — {}",
+            match record.kind {
+                CaptureKind::Screenshot => gettext("Screenshot"),
+                CaptureKind::Video => gettext("Video"),
+                CaptureKind::Gif => gettext("GIF"),
+            },
+            timestamp.text()
+        );
+        super::set_accessible_label(&card, &accessible_label);
     });
     factory
 }

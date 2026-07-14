@@ -182,4 +182,8 @@ fn failed_finalization_retains_the_recovery_marker() {
     assert!(futures_lite::future::block_on(fixture.controller.stop()).is_err());
     assert!(fixture.marker().exists());
     assert_eq!(fixture.controller.state(), RecordingUiState::Failed);
+
+    fixture.controller.acknowledge_failure().unwrap();
+    assert_eq!(fixture.controller.state(), RecordingUiState::Idle);
+    assert!(fixture.marker().exists());
 }

@@ -399,6 +399,10 @@ impl ProductionCaptureRuntime {
                 Ok(record) => CaptureOutcome::Saved(record),
                 Err(error) => capture_error_outcome(error),
             },
+            AppCommand::AcknowledgeRecordingFailure => match self.recording.acknowledge_failure() {
+                Ok(()) => CaptureOutcome::Ignored,
+                Err(error) => CaptureOutcome::Failed(error),
+            },
         }
     }
 
