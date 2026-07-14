@@ -23,13 +23,15 @@ pub fn present(application: &adw::Application, sender: Sender<AppCommand>) {
 
     let content = gtk::Box::builder()
         .orientation(Orientation::Vertical)
-        .spacing(24)
-        .halign(Align::Center)
-        .valign(Align::Center)
-        .build();
-    let title = gtk::Label::builder()
-        .label(gettext("Your captures will appear here"))
-        .css_classes(["title-2"])
+        .spacing(12)
+        .halign(Align::Fill)
+        .valign(Align::Fill)
+        .hexpand(true)
+        .vexpand(true)
+        .margin_top(12)
+        .margin_bottom(12)
+        .margin_start(12)
+        .margin_end(12)
         .build();
     let actions = gtk::Box::builder()
         .orientation(Orientation::Horizontal)
@@ -49,8 +51,18 @@ pub fn present(application: &adw::Application, sender: Sender<AppCommand>) {
         actions.append(&button);
     }
 
-    content.append(&title);
     content.append(&actions);
+    match super::gallery::build() {
+        Ok(gallery) => content.append(&gallery),
+        Err(error) => {
+            let failure = gtk::Label::new(Some(&format!(
+                "{}: {error}",
+                gettext("Unable to open the capture library")
+            )));
+            failure.add_css_class("error");
+            content.append(&failure);
+        }
+    }
     content.append(&diagnostics(&CapabilityReport::detect()));
     toolbar_view.set_content(Some(&content));
     window.set_content(Some(&toolbar_view));

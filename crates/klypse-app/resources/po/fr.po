@@ -50,3 +50,21 @@ msgstr "Disponible"
 
 msgid "Unavailable"
 msgstr "Indisponible"
+
+msgid "Copy"
+msgstr "Copier"
+
+msgid "Edit"
+msgstr "Modifier"
+
+msgid "Reveal in Folder"
+msgstr "Afficher dans le dossier"
+
+msgid "Remove from Gallery"
+msgstr "Retirer de la galerie"
+
+msgid "Delete File"
+msgstr "Supprimer le fichier"
+
+msgid "Unable to open the capture library"
+msgstr "Impossible d’ouvrir la bibliothèque de captures"

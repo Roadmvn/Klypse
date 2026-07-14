@@ -1,0 +1,316 @@
+use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::Arc};
+
+use chrono::Local;
+use gettextrs::gettext;
+use gtk::{gio, glib, prelude::*};
+use klypse_domain::CaptureKind;
+use klypse_media::Thumbnailer;
+use klypse_storage::{
+    AppPaths, CaptureRecord, CaptureRepository, CaptureStore, DeleteMode, StorageError,
+    open_database,
+};
+use uuid::Uuid;
+
+use crate::gallery::GalleryController;
+
+const PAGE_SIZE: usize = 50;
+const THUMBNAIL_EDGE: u32 = 256;
+
+pub fn build() -> Result<gtk::Widget, StorageError> {
+    let paths = AppPaths::discover()?;
+    let repository = CaptureRepository::new(open_database(&paths)?);
+    let mut controller = GalleryController::new(repository, PAGE_SIZE)?;
+    controller.load_initial()?;
+    let controller = Rc::new(RefCell::new(controller));
+    let model = gio::ListStore::new::<glib::BoxedAnyObject>();
+    append_records(&model, controller.borrow().items());
+
+    let selection = gtk::SingleSelection::new(Some(model.clone()));
+    let factory = gallery_factory();
+    let grid = gtk::GridView::builder()
+        .model(&selection)
+        .factory(&factory)
+        .max_columns(5)
+        .min_columns(1)
+        .single_click_activate(true)
+        .build();
+    let scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vexpand(true)
+        .hexpand(true)
+        .child(&grid)
+        .build();
+    let empty = gtk::Label::builder()
+        .label(gettext("Your captures will appear here"))
+        .css_classes(["title-2"])
+        .halign(gtk::Align::Center)
+        .valign(gtk::Align::Center)
+        .build();
+    let stack = gtk::Stack::new();
+    stack.add_named(&empty, Some("empty"));
+
+    let detail = detail_pane(&selection, &model, Rc::clone(&controller), &stack);
+    let paned = gtk::Paned::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .start_child(&scroll)
+        .end_child(&detail)
+        .resize_end_child(false)
+        .shrink_end_child(false)
+        .build();
+    stack.add_named(&paned, Some("gallery"));
+    update_empty_state(&stack, model.n_items());
+
+    let adjustment = scroll.vadjustment();
+    let loading = Rc::new(RefCell::new(false));
+    adjustment.connect_value_changed({
+        let controller = Rc::clone(&controller);
+        let model = model.clone();
+        let paths = paths.clone();
+        let stack = stack.clone();
+        let loading = Rc::clone(&loading);
+        move |adjustment| {
+            let threshold = (adjustment.upper() - adjustment.page_size()) * 0.8;
+            if adjustment.value() < threshold
+                || *loading.borrow()
+                || !controller.borrow().has_more()
+            {
+                return;
+            }
+            *loading.borrow_mut() = true;
+            let before = controller.borrow().items().len();
+            if let Ok(page) = controller.borrow_mut().load_next() {
+                let added = &page.items[before.min(page.items.len())..];
+                append_records(&model, added);
+                schedule_missing_thumbnails(added, &paths, controller.borrow().store(), &model);
+                update_empty_state(&stack, model.n_items());
+            }
+            *loading.borrow_mut() = false;
+        }
+    });
+
+    schedule_missing_thumbnails(
+        controller.borrow().items(),
+        &paths,
+        controller.borrow().store(),
+        &model,
+    );
+    Ok(stack.upcast())
+}
+
+fn gallery_factory() -> gtk::SignalListItemFactory {
+    let factory = gtk::SignalListItemFactory::new();
+    factory.connect_setup(|_, list_item| {
+        let Some(list_item) = list_item.downcast_ref::<gtk::ListItem>() else {
+            return;
+        };
+        let card = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(6)
+            .margin_top(6)
+            .margin_bottom(6)
+            .margin_start(6)
+            .margin_end(6)
+            .build();
+        let picture = gtk::Picture::builder()
+            .width_request(THUMBNAIL_EDGE as i32)
+            .height_request(160)
+            .content_fit(gtk::ContentFit::Cover)
+            .can_shrink(true)
+            .build();
+        let kind = gtk::Image::new();
+        let timestamp = gtk::Label::builder()
+            .xalign(0.0)
+            .ellipsize(gtk::pango::EllipsizeMode::End)
+            .build();
+        card.append(&picture);
+        card.append(&kind);
+        card.append(&timestamp);
+        list_item.set_child(Some(&card));
+    });
+    factory.connect_bind(|_, list_item| {
+        let Some(list_item) = list_item.downcast_ref::<gtk::ListItem>() else {
+            return;
+        };
+        let Some(item) = list_item.item().and_downcast::<glib::BoxedAnyObject>() else {
+            return;
+        };
+        let Some(card) = list_item.child().and_downcast::<gtk::Box>() else {
+            return;
+        };
+        let Some(picture) = card.first_child().and_downcast::<gtk::Picture>() else {
+            return;
+        };
+        let Some(kind) = picture.next_sibling().and_downcast::<gtk::Image>() else {
+            return;
+        };
+        let Some(timestamp) = kind.next_sibling().and_downcast::<gtk::Label>() else {
+            return;
+        };
+        let record = item.borrow::<CaptureRecord>();
+        picture.set_filename(record.thumbnail_path.as_ref().or(Some(&record.path)));
+        kind.set_icon_name(Some(match record.kind {
+            CaptureKind::Screenshot => "camera-photo-symbolic",
+            CaptureKind::Video => "media-record-symbolic",
+            CaptureKind::Gif => "image-x-generic-symbolic",
+        }));
+        timestamp.set_label(
+            &record
+                .created_at
+                .with_timezone(&Local)
+                .format("%x %X")
+                .to_string(),
+        );
+    });
+    factory
+}
+
+fn detail_pane(
+    selection: &gtk::SingleSelection,
+    model: &gio::ListStore,
+    controller: Rc<RefCell<GalleryController>>,
+    stack: &gtk::Stack,
+) -> gtk::Box {
+    let pane = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(8)
+        .width_request(220)
+        .margin_top(12)
+        .margin_bottom(12)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+    let copy = gtk::Button::with_label(&gettext("Copy"));
+    let edit = gtk::Button::with_label(&gettext("Edit"));
+    let reveal = gtk::Button::with_label(&gettext("Reveal in Folder"));
+    let remove = gtk::Button::with_label(&gettext("Remove from Gallery"));
+    let delete = gtk::Button::with_label(&gettext("Delete File"));
+    for button in [&copy, &edit, &reveal, &remove, &delete] {
+        button.set_sensitive(false);
+        pane.append(button);
+    }
+
+    selection.connect_selected_item_notify({
+        let copy = copy.clone();
+        let edit = edit.clone();
+        let reveal = reveal.clone();
+        let remove = remove.clone();
+        let delete = delete.clone();
+        move |selection| {
+            let record = selected_record(selection);
+            let selected = record.is_some();
+            copy.set_sensitive(selected);
+            reveal.set_sensitive(selected);
+            remove.set_sensitive(selected);
+            delete.set_sensitive(selected);
+            edit.set_sensitive(record.is_some_and(|record| record.kind == CaptureKind::Screenshot));
+        }
+    });
+    remove.connect_clicked({
+        let selection = selection.clone();
+        let model = model.clone();
+        let controller = Rc::clone(&controller);
+        let stack = stack.clone();
+        move |_| {
+            if let Some(record) = selected_record(&selection)
+                && controller
+                    .borrow_mut()
+                    .delete(&record.id, DeleteMode::GalleryOnly)
+                    .is_ok()
+            {
+                replace_records(&model, controller.borrow().items());
+                update_empty_state(&stack, model.n_items());
+            }
+        }
+    });
+    delete.connect_clicked({
+        let selection = selection.clone();
+        let model = model.clone();
+        let controller = Rc::clone(&controller);
+        let stack = stack.clone();
+        move |_| {
+            if let Some(record) = selected_record(&selection)
+                && controller
+                    .borrow_mut()
+                    .delete(&record.id, DeleteMode::GalleryAndFile)
+                    .is_ok()
+            {
+                replace_records(&model, controller.borrow().items());
+                update_empty_state(&stack, model.n_items());
+            }
+        }
+    });
+    pane
+}
+
+fn selected_record(selection: &gtk::SingleSelection) -> Option<CaptureRecord> {
+    selection
+        .selected_item()
+        .and_downcast::<glib::BoxedAnyObject>()
+        .map(|item| item.borrow::<CaptureRecord>().clone())
+}
+
+fn append_records(model: &gio::ListStore, records: &[CaptureRecord]) {
+    for record in records {
+        model.append(&glib::BoxedAnyObject::new(record.clone()));
+    }
+}
+
+fn replace_records(model: &gio::ListStore, records: &[CaptureRecord]) {
+    model.remove_all();
+    append_records(model, records);
+}
+
+fn update_empty_state(stack: &gtk::Stack, item_count: u32) {
+    stack.set_visible_child_name(if item_count == 0 { "empty" } else { "gallery" });
+}
+
+fn schedule_missing_thumbnails(
+    records: &[CaptureRecord],
+    paths: &AppPaths,
+    store: Arc<dyn CaptureStore>,
+    model: &gio::ListStore,
+) {
+    let missing = records
+        .iter()
+        .filter(|record| record.thumbnail_path.is_none() && record.path.exists())
+        .cloned()
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        return;
+    }
+    let (sender, receiver) = async_channel::unbounded::<(Uuid, PathBuf)>();
+    for record in missing {
+        let sender = sender.clone();
+        let destination = paths.thumbnails.join(format!("{}.png", record.id));
+        let store = Arc::clone(&store);
+        std::thread::spawn(move || {
+            if Thumbnailer::new(THUMBNAIL_EDGE)
+                .generate(&record.path, &destination)
+                .is_ok()
+                && store.set_thumbnail(&record.id, &destination).is_ok()
+            {
+                let _ = sender.send_blocking((record.id, destination));
+            }
+        });
+    }
+    drop(sender);
+    let model = model.clone();
+    glib::spawn_future_local(async move {
+        while let Ok((id, path)) = receiver.recv().await {
+            update_thumbnail(&model, id, path);
+        }
+    });
+}
+
+fn update_thumbnail(model: &gio::ListStore, id: Uuid, path: PathBuf) {
+    for index in 0..model.n_items() {
+        let Some(item) = model.item(index).and_downcast::<glib::BoxedAnyObject>() else {
+            continue;
+        };
+        if item.borrow::<CaptureRecord>().id == id {
+            item.borrow_mut::<CaptureRecord>().thumbnail_path = Some(path);
+            model.items_changed(index, 1, 1);
+            break;
+        }
+    }
+}

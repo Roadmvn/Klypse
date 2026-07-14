@@ -1284,14 +1284,19 @@ name = "klypse-app"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "chrono",
  "clap",
  "gettext-rs",
  "gtk4",
  "klypse-domain",
+ "klypse-media",
  "klypse-platform",
+ "klypse-storage",
  "libadwaita",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

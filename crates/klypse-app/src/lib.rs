@@ -1,5 +1,6 @@
 pub mod application;
 pub mod cli;
+pub mod gallery;
 pub mod i18n;
 pub mod logging;
 pub mod ui;
