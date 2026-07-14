@@ -1,3 +1,3 @@
 mod controller;
 
-pub use controller::{EditorController, EditorTool};
+pub use controller::{EditorController, EditorError, EditorTool};

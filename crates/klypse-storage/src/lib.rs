@@ -20,6 +20,8 @@ pub enum StorageError {
     InvalidPageLimit(usize),
     #[error("capture {0} was not found")]
     CaptureNotFound(uuid::Uuid),
+    #[error("capture {id} has a corrupt annotation: {reason}")]
+    CorruptAnnotation { id: uuid::Uuid, reason: String },
     #[error("invalid stored value: {0}")]
     InvalidValue(String),
     #[error("a storage lock was poisoned")]

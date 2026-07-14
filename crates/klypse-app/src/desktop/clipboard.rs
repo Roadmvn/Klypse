@@ -2,6 +2,7 @@ use std::path::Path;
 
 use gtk::{gdk, gio, glib, prelude::*};
 use klypse_domain::{CaptureKind, KlypseError};
+use klypse_image::{AnnotationDocument, Renderer};
 use klypse_storage::CaptureRecord;
 
 pub fn capture_content_provider(
@@ -30,6 +31,28 @@ pub fn copy_static_image(path: &Path) -> Result<(), KlypseError> {
     let png = gdk::ContentProvider::for_bytes("image/png", &texture.save_to_png_bytes());
     let file = file_provider(path);
     set_clipboard_content(gdk::ContentProvider::new_union(&[pixels, png, file]))
+}
+
+pub fn copy_flattened_image(
+    source: &[u8],
+    document: &AnnotationDocument,
+) -> Result<(), KlypseError> {
+    let rendered = Renderer::default()
+        .render_to_rgba(source, document)
+        .map_err(|error| KlypseError::Media(error.to_string()))?;
+    let width = rendered.width();
+    let height = rendered.height();
+    let bytes = glib::Bytes::from_owned(rendered.into_raw());
+    let texture = gdk::MemoryTexture::new(
+        width as i32,
+        height as i32,
+        gdk::MemoryFormat::R8g8b8a8,
+        &bytes,
+        width as usize * 4,
+    );
+    let pixels = gdk::ContentProvider::for_value(&texture.to_value());
+    let png = gdk::ContentProvider::for_bytes("image/png", &texture.save_to_png_bytes());
+    set_clipboard_content(gdk::ContentProvider::new_union(&[pixels, png]))
 }
 
 pub fn copy_file_uri(path: &Path) -> Result<(), KlypseError> {

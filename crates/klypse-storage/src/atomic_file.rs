@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{self, Write},
+    io::{self, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
 
@@ -12,12 +12,21 @@ use crate::{AppPaths, StorageError};
 pub struct AtomicCaptureFile {
     temporary: NamedTempFile,
     captures: PathBuf,
-    id: Uuid,
     extension: String,
+    file_stem: String,
 }
 
 impl AtomicCaptureFile {
     pub fn new(paths: &AppPaths, id: Uuid, extension: &str) -> Result<Self, StorageError> {
+        Self::new_named(paths, id, extension, &id.to_string())
+    }
+
+    pub fn new_named(
+        paths: &AppPaths,
+        _id: Uuid,
+        extension: &str,
+        file_stem: &str,
+    ) -> Result<Self, StorageError> {
         paths.ensure()?;
         if extension.is_empty()
             || !extension
@@ -28,11 +37,20 @@ impl AtomicCaptureFile {
                 "invalid capture extension {extension:?}"
             )));
         }
+        if file_stem.is_empty()
+            || !file_stem.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '-' | '_')
+            })
+        {
+            return Err(StorageError::InvalidValue(format!(
+                "invalid capture file stem {file_stem:?}"
+            )));
+        }
         Ok(Self {
             temporary: NamedTempFile::new_in(&paths.temporary)?,
             captures: paths.captures.clone(),
-            id,
             extension: extension.to_ascii_lowercase(),
+            file_stem: file_stem.into(),
         })
     }
 
@@ -42,7 +60,7 @@ impl AtomicCaptureFile {
 
         let final_path = self
             .captures
-            .join(format!("{}.{}", self.id, self.extension));
+            .join(format!("{}.{}", self.file_stem, self.extension));
         let mut source = File::open(self.temporary.path())?;
         let mut sibling = NamedTempFile::new_in(&self.captures)?;
         io::copy(&mut source, sibling.as_file_mut())?;
@@ -79,5 +97,11 @@ impl Write for AtomicCaptureFile {
 
     fn flush(&mut self) -> io::Result<()> {
         self.temporary.flush()
+    }
+}
+
+impl Seek for AtomicCaptureFile {
+    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+        self.temporary.seek(position)
     }
 }

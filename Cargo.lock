@@ -1730,6 +1730,7 @@ dependencies = [
  "klypse-platform",
  "klypse-storage",
  "libadwaita",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tracing",

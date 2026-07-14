@@ -1,12 +1,37 @@
+use std::{fs, io::Write};
+
+use chrono::Utc;
+use image::{DynamicImage, ImageFormat};
+use klypse_domain::CaptureKind;
 use klypse_image::{
     AnnotationDocument, DocumentCommand, EditHistory, ImageError, Layer, LayerKind, Point, Rect,
-    RedactionMode, Rgba, Stroke, ViewportTransform,
+    RedactionMode, Renderer, Rgba, Stroke, ViewportTransform,
 };
+use klypse_media::Thumbnailer;
+use klypse_storage::{
+    AppPaths, AtomicCaptureFile, CaptureRecord, CaptureStore, NewCaptureRecord, StorageError,
+};
+use uuid::Uuid;
 
 const MIN_ZOOM: f64 = 0.1;
 const MAX_ZOOM: f64 = 8.0;
 const DEFAULT_STROKE_WIDTH: f64 = 3.0;
 const DEFAULT_TEXT_SIZE: f64 = 24.0;
+const THUMBNAIL_EDGE: u32 = 256;
+
+#[derive(Debug, thiserror::Error)]
+pub enum EditorError {
+    #[error(transparent)]
+    Image(#[from] ImageError),
+    #[error(transparent)]
+    Storage(#[from] StorageError),
+    #[error("only screenshots can be edited")]
+    UnsupportedMedia,
+    #[error("annotation serialization failed: {0}")]
+    Serialization(String),
+    #[error("PNG export failed: {0}")]
+    Export(String),
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum EditorTool {
@@ -49,6 +74,29 @@ struct Gesture {
 impl EditorController {
     pub fn new(width: u32, height: u32) -> Result<Self, ImageError> {
         Self::from_document(AnnotationDocument::new(width, height)?)
+    }
+
+    pub fn open(record: &CaptureRecord) -> Result<Self, EditorError> {
+        if record.kind != CaptureKind::Screenshot {
+            return Err(EditorError::UnsupportedMedia);
+        }
+        let document = match record.annotation_json.as_deref() {
+            Some(json) => serde_json::from_str::<AnnotationDocument>(json).map_err(|error| {
+                StorageError::CorruptAnnotation {
+                    id: record.id,
+                    reason: error.to_string(),
+                }
+            })?,
+            None => AnnotationDocument::new(record.width, record.height)?,
+        };
+        if document.original_width != record.width || document.original_height != record.height {
+            return Err(StorageError::CorruptAnnotation {
+                id: record.id,
+                reason: "document dimensions do not match the capture".into(),
+            }
+            .into());
+        }
+        Ok(Self::from_document(document)?)
     }
 
     pub fn from_document(document: AnnotationDocument) -> Result<Self, ImageError> {
@@ -228,6 +276,94 @@ impl EditorController {
         self.saved_document = self.document.clone();
     }
 
+    pub fn save(
+        &mut self,
+        store: &(impl CaptureStore + ?Sized),
+        capture_id: &Uuid,
+    ) -> Result<(), EditorError> {
+        self.document.validate()?;
+        let annotation = serde_json::to_string(&self.document)
+            .map_err(|error| EditorError::Serialization(error.to_string()))?;
+        store.set_annotation(capture_id, Some(&annotation))?;
+        self.mark_saved();
+        Ok(())
+    }
+
+    pub fn reset_annotations(
+        &mut self,
+        store: &(impl CaptureStore + ?Sized),
+        record: &CaptureRecord,
+    ) -> Result<(), EditorError> {
+        store.set_annotation(&record.id, None)?;
+        *self = Self::new(record.width, record.height)?;
+        Ok(())
+    }
+
+    pub fn export_flattened(
+        &self,
+        source: &[u8],
+        paths: &AppPaths,
+        store: &(impl CaptureStore + ?Sized),
+        original_record: &CaptureRecord,
+    ) -> Result<CaptureRecord, EditorError> {
+        if original_record.kind != CaptureKind::Screenshot {
+            return Err(EditorError::UnsupportedMedia);
+        }
+        let rendered = Renderer::default().render_to_rgba(source, &self.document)?;
+        let (width, height) = rendered.dimensions();
+        let id = Uuid::new_v4();
+        let original_path = original_record
+            .original_path
+            .clone()
+            .unwrap_or_else(|| original_record.path.clone());
+        let original_stem = original_path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .map(sanitize_file_stem)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "capture".into());
+        let timestamp = Utc::now().format("%Y%m%d-%H%M%S-%3f");
+        let file_stem = format!("{original_stem}-edited-{timestamp}");
+        let mut output = AtomicCaptureFile::new_named(paths, id, "png", &file_stem)?;
+        DynamicImage::ImageRgba8(rendered)
+            .write_to(&mut output, ImageFormat::Png)
+            .map_err(|error| EditorError::Export(error.to_string()))?;
+        output.flush().map_err(StorageError::Io)?;
+        let committed = output.commit()?;
+        let file_size = fs::metadata(&committed).map_err(StorageError::Io)?.len();
+        let new_record = NewCaptureRecord {
+            id,
+            kind: CaptureKind::Screenshot,
+            path: committed.clone(),
+            original_path: Some(original_path),
+            thumbnail_path: None,
+            created_at: Utc::now(),
+            width,
+            height,
+            duration: None,
+            file_size,
+            target: original_record.target,
+            backend: original_record.backend,
+            annotation_json: None,
+        };
+        let mut record = match store.insert(new_record) {
+            Ok(record) => record,
+            Err(error) => {
+                let _ = AtomicCaptureFile::move_to_orphans(paths, id, &committed);
+                return Err(error.into());
+            }
+        };
+        let thumbnail = paths.thumbnails.join(format!("{}.png", record.id));
+        if Thumbnailer::new(THUMBNAIL_EDGE)
+            .generate(&record.path, &thumbnail)
+            .is_ok()
+            && store.set_thumbnail(&record.id, &thumbnail).is_ok()
+        {
+            record.thumbnail_path = Some(thumbnail);
+        }
+        Ok(record)
+    }
+
     pub const fn zoom(&self) -> f64 {
         self.zoom
     }
@@ -367,4 +503,19 @@ impl EditorController {
 
 fn normalized_rect(start: Point, end: Point) -> Option<Rect> {
     Rect::from_points(start, end).ok()
+}
+
+fn sanitize_file_stem(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_owned()
 }

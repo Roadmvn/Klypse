@@ -52,7 +52,7 @@ pub fn build(events: async_channel::Receiver<GalleryEvent>) -> Result<gtk::Widge
     let stack = gtk::Stack::new();
     stack.add_named(&empty, Some("empty"));
 
-    let detail = detail_pane(&selection, &model, Rc::clone(&controller), &stack);
+    let detail = detail_pane(&selection, &model, Rc::clone(&controller), &stack, &paths);
     let paned = gtk::Paned::builder()
         .orientation(gtk::Orientation::Horizontal)
         .start_child(&scroll)
@@ -206,6 +206,7 @@ fn detail_pane(
     model: &gio::ListStore,
     controller: Rc<RefCell<GalleryController>>,
     stack: &gtk::Stack,
+    paths: &AppPaths,
 ) -> gtk::Box {
     let pane = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
@@ -254,9 +255,41 @@ fn detail_pane(
     });
     edit.connect_clicked({
         let selection = selection.clone();
+        let model = model.clone();
+        let controller = Rc::clone(&controller);
+        let stack = stack.clone();
+        let paths = paths.clone();
         move |_| {
-            if let Some(record) = selected_record(&selection)
-                && let Err(error) = super::editor::present(record.clone())
+            let Some(selected) = selected_record(&selection) else {
+                return;
+            };
+            let store = controller.borrow().store();
+            let record = match store.get(&selected.id) {
+                Ok(Some(record)) => record,
+                Ok(None) | Err(_) => selected,
+            };
+            let on_export = Rc::new({
+                let selection = selection.clone();
+                let model = model.clone();
+                let controller = Rc::clone(&controller);
+                let stack = stack.clone();
+                let paths = paths.clone();
+                move |exported: CaptureRecord| {
+                    if let Ok(page) = controller.borrow_mut().refresh() {
+                        replace_records(&model, &page.items);
+                        schedule_missing_thumbnails(
+                            &page.items,
+                            &paths,
+                            controller.borrow().store(),
+                            &model,
+                        );
+                        update_empty_state(&stack, model.n_items());
+                        select_record(&selection, &model, exported.id);
+                    }
+                }
+            });
+            if let Err(error) =
+                super::editor::present(record.clone(), store, paths.clone(), on_export)
             {
                 tracing::warn!(capture_id = %record.id, %error, "capture editor could not be opened");
             }

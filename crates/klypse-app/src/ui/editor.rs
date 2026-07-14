@@ -2,19 +2,32 @@ use std::{
     cell::{Cell, RefCell},
     fs,
     rc::Rc,
+    sync::Arc,
 };
 
 use gettextrs::gettext;
 use gtk::{gdk, glib, prelude::*};
-use klypse_domain::CaptureKind;
 use klypse_image::{AnnotationDocument, ImageError, Point, Renderer, Rgba};
-use klypse_storage::CaptureRecord;
+use klypse_storage::{AppPaths, CaptureRecord, CaptureStore, StorageError};
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use crate::editor::{EditorController, EditorTool};
+use crate::{
+    desktop::clipboard::copy_flattened_image,
+    editor::{EditorController, EditorError, EditorTool},
+};
 
 const ZOOM_STEP: f64 = 1.25;
+
+type SaveAction = Rc<dyn Fn(&mut EditorController) -> Result<(), EditorError>>;
+type ExportAction = Rc<dyn Fn(&EditorController, &[u8]) -> Result<(), EditorError>>;
+pub type ExportCallback = Rc<dyn Fn(CaptureRecord)>;
+
+#[derive(Clone)]
+struct EditorActions {
+    save: SaveAction,
+    export: Option<ExportAction>,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum EditorViewError {
@@ -22,8 +35,8 @@ pub enum EditorViewError {
     Image(#[from] ImageError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error("only screenshots can be edited")]
-    UnsupportedMedia,
+    #[error(transparent)]
+    Editor(#[from] EditorError),
 }
 
 pub struct EditorView {
@@ -31,10 +44,29 @@ pub struct EditorView {
     canvas: gtk::DrawingArea,
     controller: Rc<RefCell<EditorController>>,
     tool_button_count: usize,
+    save_action: SaveAction,
 }
 
 impl EditorView {
     pub fn new(controller: EditorController, source: Vec<u8>) -> Result<Self, EditorViewError> {
+        Self::new_with_actions(
+            controller,
+            source,
+            EditorActions {
+                save: Rc::new(|controller| {
+                    controller.mark_saved();
+                    Ok(())
+                }),
+                export: None,
+            },
+        )
+    }
+
+    fn new_with_actions(
+        controller: EditorController,
+        source: Vec<u8>,
+        actions: EditorActions,
+    ) -> Result<Self, EditorViewError> {
         let controller = Rc::new(RefCell::new(controller));
         let source = Rc::new(source);
         let root = gtk::Box::builder()
@@ -68,6 +100,9 @@ impl EditorView {
             .build();
         let save = gtk::Button::with_label(&gettext("Save"));
         save.add_css_class("suggested-action");
+        let copy = gtk::Button::with_label(&gettext("Copy"));
+        let export = gtk::Button::with_label(&gettext("Export"));
+        export.set_sensitive(actions.export.is_some());
         for widget in [
             undo.clone().upcast::<gtk::Widget>(),
             redo.clone().upcast(),
@@ -80,6 +115,8 @@ impl EditorView {
         let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         spacer.set_hexpand(true);
         toolbar.append(&spacer);
+        toolbar.append(&copy);
+        toolbar.append(&export);
         toolbar.append(&save);
         root.append(&toolbar);
 
@@ -326,10 +363,38 @@ impl EditorView {
         });
         save.connect_clicked({
             let controller = Rc::clone(&controller);
-            move |_| controller.borrow_mut().mark_saved()
+            let save = Rc::clone(&actions.save);
+            move |_| {
+                if let Err(error) = save(&mut controller.borrow_mut()) {
+                    tracing::warn!(%error, "annotations could not be saved");
+                }
+            }
         });
+        copy.connect_clicked({
+            let controller = Rc::clone(&controller);
+            let source = Rc::clone(&source);
+            move |_| {
+                if let Err(error) =
+                    copy_flattened_image(source.as_slice(), controller.borrow().document())
+                {
+                    tracing::warn!(%error, "flattened editor pixels could not be copied");
+                }
+            }
+        });
+        if let Some(export_action) = actions.export.clone() {
+            export.connect_clicked({
+                let controller = Rc::clone(&controller);
+                let source = Rc::clone(&source);
+                move |_| {
+                    if let Err(error) = export_action(&controller.borrow(), source.as_slice()) {
+                        tracing::warn!(%error, "flattened screenshot could not be exported");
+                    }
+                }
+            });
+        }
 
         let keys = gtk::EventControllerKey::new();
+        let keyboard_save = Rc::clone(&actions.save);
         keys.connect_key_pressed({
             let controller = Rc::clone(&controller);
             let refresh = Rc::clone(&refresh);
@@ -352,10 +417,7 @@ impl EditorView {
                     }
                     gdk::Key::z if control && shift => controller.borrow_mut().redo().is_ok(),
                     gdk::Key::z if control => controller.borrow_mut().undo().is_ok(),
-                    gdk::Key::s if control => {
-                        controller.borrow_mut().mark_saved();
-                        true
-                    }
+                    gdk::Key::s if control => keyboard_save(&mut controller.borrow_mut()).is_ok(),
                     _ => false,
                 };
                 if handled {
@@ -374,6 +436,7 @@ impl EditorView {
             canvas,
             controller,
             tool_button_count: tools.len(),
+            save_action: actions.save,
         })
     }
 
@@ -394,13 +457,43 @@ impl EditorView {
     }
 }
 
-pub fn present(record: CaptureRecord) -> Result<(), EditorViewError> {
-    if record.kind != CaptureKind::Screenshot {
-        return Err(EditorViewError::UnsupportedMedia);
-    }
+pub fn present(
+    record: CaptureRecord,
+    store: Arc<dyn CaptureStore>,
+    paths: AppPaths,
+    on_export: ExportCallback,
+) -> Result<(), EditorViewError> {
     let source = fs::read(&record.path)?;
-    let controller = EditorController::new(record.width, record.height)?;
-    let view = EditorView::new(controller, source)?;
+    let controller = match EditorController::open(&record) {
+        Ok(controller) => controller,
+        Err(EditorError::Storage(StorageError::CorruptAnnotation { reason, .. })) => {
+            present_corrupt_annotation(record, store, paths, on_export, reason);
+            return Ok(());
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let actions = EditorActions {
+        save: {
+            let store = Arc::clone(&store);
+            let id = record.id;
+            Rc::new(move |controller| controller.save(store.as_ref(), &id))
+        },
+        export: {
+            let store = Arc::clone(&store);
+            let paths = paths.clone();
+            let record = record.clone();
+            let on_export = Rc::clone(&on_export);
+            Some(Rc::new(
+                move |controller: &EditorController, source: &[u8]| {
+                    let exported =
+                        controller.export_flattened(source, &paths, store.as_ref(), &record)?;
+                    on_export(exported);
+                    Ok(())
+                },
+            ))
+        },
+    };
+    let view = EditorView::new_with_actions(controller, source, actions)?;
     let window = adw::Window::builder()
         .title(gettext("Edit screenshot"))
         .default_width(1100)
@@ -408,6 +501,7 @@ pub fn present(record: CaptureRecord) -> Result<(), EditorViewError> {
         .content(view.root())
         .build();
     let controller = view.controller();
+    let save_action = Rc::clone(&view.save_action);
     let closing = Rc::new(Cell::new(false));
     window.connect_close_request({
         let window = window.clone();
@@ -435,12 +529,17 @@ pub fn present(record: CaptureRecord) -> Result<(), EditorViewError> {
                 let window = window.clone();
                 let controller = Rc::clone(&controller);
                 let closing = Rc::clone(&closing);
+                let save_action = Rc::clone(&save_action);
                 move |response| match response.as_str() {
-                    "save" => {
-                        controller.borrow_mut().mark_saved();
-                        closing.set(true);
-                        window.close();
-                    }
+                    "save" => match save_action(&mut controller.borrow_mut()) {
+                        Ok(()) => {
+                            closing.set(true);
+                            window.close();
+                        }
+                        Err(error) => {
+                            tracing::warn!(%error, "annotations could not be saved before closing");
+                        }
+                    },
                     "discard" => {
                         closing.set(true);
                         window.close();
@@ -453,6 +552,42 @@ pub fn present(record: CaptureRecord) -> Result<(), EditorViewError> {
     });
     window.present();
     Ok(())
+}
+
+fn present_corrupt_annotation(
+    mut record: CaptureRecord,
+    store: Arc<dyn CaptureStore>,
+    paths: AppPaths,
+    on_export: ExportCallback,
+    reason: String,
+) {
+    let dialog = adw::MessageDialog::new(
+        None::<&gtk::Window>,
+        Some(&gettext("Annotations cannot be opened")),
+        Some(&format!(
+            "{}\n\n{reason}",
+            gettext("Reset the annotations to edit the original screenshot again?")
+        )),
+    );
+    dialog.add_responses(&[
+        ("cancel", &gettext("Cancel")),
+        ("reset", &gettext("Reset annotations")),
+    ]);
+    dialog.set_close_response("cancel");
+    dialog.set_response_appearance("reset", adw::ResponseAppearance::Destructive);
+    dialog.choose(gtk::gio::Cancellable::NONE, move |response| {
+        if response == "reset" {
+            match store.set_annotation(&record.id, None) {
+                Ok(()) => {
+                    record.annotation_json = None;
+                    if let Err(error) = present(record, store, paths, on_export) {
+                        tracing::warn!(%error, "capture editor could not be reopened");
+                    }
+                }
+                Err(error) => tracing::warn!(%error, "corrupt annotations could not be reset"),
+            }
+        }
+    });
 }
 
 fn refresh_preview(
