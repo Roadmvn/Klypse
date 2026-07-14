@@ -1758,6 +1758,7 @@ dependencies = [
  "pangocairo",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
 ]
 
