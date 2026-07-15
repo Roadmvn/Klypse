@@ -1,7 +1,7 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::Arc};
 
+use crate::i18n::gettext;
 use chrono::Local;
-use gettextrs::gettext;
 use gtk::{gio, glib, prelude::*};
 use klypse_domain::CaptureKind;
 use klypse_media::Thumbnailer;

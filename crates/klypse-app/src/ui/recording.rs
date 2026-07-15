@@ -4,14 +4,13 @@ use std::{
 };
 
 use async_channel::Sender;
-use gettextrs::gettext;
 use gtk::{Align, Orientation, glib, prelude::*};
 use klypse_domain::{
     AppCommand, CaptureKind, CaptureRequest, CaptureTarget, GIF_MAX_DURATION, RecordingRequest,
 };
 use klypse_platform::CapabilityReport;
 
-use crate::recording::RecordingUiState;
+use crate::{i18n::gettext, recording::RecordingUiState};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RecordingSnapshot {

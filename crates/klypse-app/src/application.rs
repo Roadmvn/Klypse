@@ -7,7 +7,6 @@ use std::{
 };
 
 use async_channel::{Receiver, Sender};
-use gettextrs::gettext;
 use gtk::{gio, glib, prelude::*};
 use klypse_domain::{
     AppCommand, CaptureBackend, CaptureKind, CaptureRequest, CaptureSelection, CaptureTarget,
@@ -27,6 +26,7 @@ use crate::{
     cli,
     desktop::{clipboard::copy_static_image, notification::notify_capture_saved},
     gallery::GalleryEvent,
+    i18n::gettext,
     recording::{
         DesktopRecordingBackend, RecordingController, RecordingEffects, RecordingStage,
         RecordingUiState,

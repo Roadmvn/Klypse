@@ -252,6 +252,9 @@ msgstr "Français"
 msgid "Language"
 msgstr "Langue"
 
+msgid "Restart Klypse to apply language changes"
+msgstr "Redémarrez Klypse pour appliquer le changement de langue"
+
 msgid "Frames per second"
 msgstr "Images par seconde"
 

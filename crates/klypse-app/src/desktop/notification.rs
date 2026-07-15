@@ -1,4 +1,4 @@
-use gettextrs::gettext;
+use crate::i18n::gettext;
 use gtk::{gio, prelude::*};
 use klypse_domain::KlypseError;
 use klypse_storage::CaptureRecord;

@@ -1,11 +1,10 @@
-use gettextrs::gettext;
 use gtk::{gio, prelude::*};
 use klypse_domain::HotkeyAction;
 use klypse_platform::{CapabilityReport, CapabilityStatus, cli_fallback_commands};
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use crate::settings::AppSettings;
+use crate::{i18n::gettext, settings::AppSettings};
 
 pub fn present(parent: &adw::ApplicationWindow) {
     let settings = match AppSettings::new() {
@@ -129,6 +128,7 @@ fn general_group(parent: &adw::ApplicationWindow, settings: &AppSettings) -> adw
         gtk::StringList::new(&[&gettext("System"), &gettext("English"), &gettext("French")]);
     let language = adw::ComboRow::builder()
         .title(gettext("Language"))
+        .subtitle(gettext("Restart Klypse to apply language changes"))
         .model(&languages)
         .selected(match settings.language().as_str() {
             "en" => 1,

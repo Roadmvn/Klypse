@@ -1,7 +1,6 @@
 use std::{path::Path, sync::Arc};
 
 use async_channel::{Receiver, Sender};
-use gettextrs::gettext;
 use gtk::{gio, glib, prelude::*};
 use klypse_domain::AppCommand;
 use klypse_storage::{
@@ -9,7 +8,7 @@ use klypse_storage::{
     RecoveryReport, StorageError, open_database,
 };
 
-use crate::{gallery::GalleryEvent, settings::AppSettings};
+use crate::{gallery::GalleryEvent, i18n::gettext, settings::AppSettings};
 
 pub fn monitor(
     container: &gtk::Box,

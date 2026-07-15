@@ -1,10 +1,11 @@
 use async_channel::Sender;
-use gettextrs::gettext;
 use gtk::{Align, Orientation, prelude::*};
 use klypse_domain::AppCommand;
 use klypse_platform::{CapabilityReport, CapabilityStatus};
 use libadwaita as adw;
 use libadwaita::prelude::*;
+
+use crate::i18n::gettext;
 
 pub fn present(
     application: &adw::Application,

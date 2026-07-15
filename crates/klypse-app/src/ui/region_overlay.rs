@@ -1,6 +1,6 @@
 use std::{cell::RefCell, path::Path, rc::Rc};
 
-use gettextrs::gettext;
+use crate::i18n::gettext;
 use gtk::{gdk, glib, prelude::*};
 use klypse_domain::KlypseError;
 use klypse_platform::{Rect, normalize_selection};

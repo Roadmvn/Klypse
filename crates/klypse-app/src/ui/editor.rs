@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use gettextrs::gettext;
+use crate::i18n::gettext;
 use gtk::{gdk, glib, prelude::*};
 use klypse_image::{AnnotationDocument, ImageError, Point, Renderer, Rgba};
 use klypse_storage::{AppPaths, CaptureRecord, CaptureStore, StorageError};
