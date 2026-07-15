@@ -17,6 +17,7 @@ RUN apt-get update \
         debhelper \
         desktop-file-utils \
         dpkg-dev \
+        elfutils \
         flatpak \
         flatpak-builder \
         gettext \
@@ -32,6 +33,7 @@ RUN apt-get update \
         libgstreamer1.0-dev \
         libgtk-4-dev \
         libpipewire-0.3-dev \
+        librsvg2-common \
         libsqlite3-dev \
         libxcb-composite0-dev \
         libxcb-randr0-dev \

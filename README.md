@@ -23,7 +23,8 @@ The Review workflow also publishes the `.deb` as a CI artifact after every succe
 
 ### Flatpak
 
-Install `flatpak`, `flatpak-builder`, and `elfutils` (for `eu-strip`), then run:
+Install `flatpak`, `flatpak-builder`, `elfutils` (for `eu-strip`), and the SVG
+loader package (`librsvg2-common` on Debian/Ubuntu), then run:
 
 ```bash
 bash scripts/build-flatpak.sh

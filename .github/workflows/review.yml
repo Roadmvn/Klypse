@@ -158,7 +158,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
             elfutils \
-            flatpak-builder
+            flatpak-builder \
+            librsvg2-common
 
       - name: Validate generated sources and manifest
         run: |
