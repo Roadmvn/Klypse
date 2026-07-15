@@ -31,7 +31,7 @@
 - `debian/*`: Debian source package metadata and installation rules.
 - `packaging/flatpak/io.github.roadmvn.Klypse.yml`: Flatpak manifest.
 - `scripts/verify-release.sh`: complete local quality gate.
-- `.github/workflows/ci.yml`: clean Debian CI build and tests.
+- `.github/workflows/review.yml`: clean release, Debian, and Flatpak CI jobs.
 - `docs/testing/linux-compatibility-matrix.md`: reproducible manual validation record.
 
 ### Task 1: Startup reconciliation and interrupted-recording recovery
@@ -292,7 +292,7 @@ git commit -m "build: add Flatpak packaging"
 **Interfaces:**
 - Produces: one local release command, clean CI, installation instructions, and an auditable manual X11/Wayland test record.
 
-- [ ] **Step 1: Write the release verification script with strict failure**
+- [x] **Step 1: Write the release verification script with strict failure**
 
 ```bash
 #!/usr/bin/env bash
@@ -307,13 +307,13 @@ appstreamcli validate --no-net crates/klypse-app/resources/io.github.roadmvn.Kly
 cargo deny check
 ```
 
-- [ ] **Step 2: Run the release script and capture failures**
+- [x] **Step 2: Run the release script and capture failures**
 
 Run: `bash scripts/verify-release.sh`
 
 Expected: any still-unmet formatter, lint, test, metadata, or dependency-policy requirement fails the script.
 
-- [ ] **Step 3: Complete CI, documentation, and manual matrix**
+- [x] **Step 3: Complete CI, documentation, and manual matrix**
 
 CI runs the bootstrap package set on Debian stable, caches Cargo downloads, and invokes `scripts/verify-release.sh`. Add `cargo-deny` configuration allowing only licenses compatible with GPL-3.0-or-later and denying unknown git dependencies.
 
@@ -321,7 +321,7 @@ README documents `.deb` and Flatpak installation, all CLI commands, X11 versus W
 
 The compatibility matrix has dated rows for Kali Xfce X11, GNOME Wayland, KDE Plasma Wayland, and one GNOME/KDE X11 session. Each row records region/screen/window capture, WebM/GIF start-stop, cancellation, clipboard, drag, editor, persistence, language, and recovery. Mark environments not available on the development host as `Not run: environment unavailable`; never mark them passing by inference.
 
-- [ ] **Step 4: Run final verification and package smoke tests**
+- [x] **Step 4: Run final verification and package smoke tests**
 
 Run: `bash scripts/verify-release.sh`
 
@@ -331,7 +331,7 @@ Run: `bash scripts/test-debian-package.sh ../klypse_0.1.0-1_amd64.deb && bash sc
 
 Expected: both package smoke tests pass.
 
-- [ ] **Step 5: Commit the release gate**
+- [x] **Step 5: Commit the release gate**
 
 ```bash
 git add .github README.md docs/testing scripts Cargo.toml deny.toml
