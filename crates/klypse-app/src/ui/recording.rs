@@ -53,7 +53,10 @@ impl RecordingPresentation {
 
     pub fn state_changed(&mut self, state: RecordingUiState) {
         self.state = state;
-        if state == RecordingUiState::Idle {
+        if matches!(
+            state,
+            RecordingUiState::Idle | RecordingUiState::RecoveryRequired
+        ) {
             self.kind = None;
             self.started_at = None;
             self.maximum_duration = None;
@@ -222,11 +225,15 @@ fn refresh(
         },
         RecordingUiState::Finalizing => gettext("Finalizing recording"),
         RecordingUiState::Failed => gettext("Recording failed"),
+        RecordingUiState::RecoveryRequired => gettext("Recovery needed"),
     };
     status.set_label(&status_text);
     timer.set_label(&time_label(snapshot));
     stop.set_sensitive(snapshot.state == RecordingUiState::Recording);
-    stop.set_visible(snapshot.state != RecordingUiState::Failed);
+    stop.set_visible(!matches!(
+        snapshot.state,
+        RecordingUiState::Failed | RecordingUiState::RecoveryRequired
+    ));
     dismiss.set_visible(snapshot.state == RecordingUiState::Failed);
 }
 

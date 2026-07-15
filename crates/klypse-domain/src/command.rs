@@ -30,4 +30,5 @@ pub enum AppCommand {
     Record(RecordingRequest),
     StopRecording,
     AcknowledgeRecordingFailure,
+    CompleteRecordingRecovery,
 }

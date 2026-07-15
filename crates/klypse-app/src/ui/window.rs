@@ -12,6 +12,7 @@ pub fn present(
     gallery_events: async_channel::Receiver<crate::gallery::GalleryEvent>,
     gallery_event_sender: async_channel::Sender<crate::gallery::GalleryEvent>,
     recording: std::sync::Arc<std::sync::Mutex<super::recording::RecordingPresentation>>,
+    recovery_scans: async_channel::Receiver<()>,
 ) {
     if let Some(window) = application.active_window() {
         window.present();
@@ -51,7 +52,13 @@ pub fn present(
         .margin_end(12)
         .build();
     let capabilities = CapabilityReport::detect();
-    content.append(&super::recording::build(sender, recording, &capabilities));
+    let recovery_host = gtk::Box::new(Orientation::Vertical, 0);
+    content.append(&recovery_host);
+    content.append(&super::recording::build(
+        sender.clone(),
+        recording,
+        &capabilities,
+    ));
     match super::gallery::build(gallery_events) {
         Ok(gallery) => content.append(&gallery),
         Err(error) => {
@@ -67,7 +74,7 @@ pub fn present(
     toolbar_view.set_content(Some(&content));
     window.set_content(Some(&toolbar_view));
     window.present();
-    super::recovery::scan_and_mount(&content, gallery_event_sender);
+    super::recovery::monitor(&recovery_host, gallery_event_sender, sender, recovery_scans);
 }
 
 fn diagnostics(report: &CapabilityReport) -> gtk::Expander {

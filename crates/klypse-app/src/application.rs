@@ -46,6 +46,7 @@ pub fn run() -> glib::ExitCode {
     let (gallery_event_sender, gallery_event_receiver) = async_channel::unbounded();
     let (hotkey_action_sender, hotkey_action_receiver) = async_channel::unbounded();
     let (recording_lifecycle_sender, recording_lifecycle_receiver) = async_channel::unbounded();
+    let (recovery_scan_sender, recovery_scan_receiver) = async_channel::unbounded();
     let recording_presentation = Arc::new(Mutex::new(RecordingPresentation::default()));
 
     connect_activate(
@@ -54,6 +55,7 @@ pub fn run() -> glib::ExitCode {
         gallery_event_receiver,
         gallery_event_sender.clone(),
         Arc::clone(&recording_presentation),
+        recovery_scan_receiver,
     );
     connect_command_line(&application, sender.clone());
     connect_open_capture_action(&application, gallery_event_sender.clone());
@@ -65,6 +67,7 @@ pub fn run() -> glib::ExitCode {
         gallery_event_sender,
         recording_lifecycle_sender,
         recording_presentation,
+        recovery_scan_sender,
     );
 
     application.run()
@@ -193,6 +196,7 @@ fn connect_activate(
     gallery_events: Receiver<GalleryEvent>,
     gallery_event_sender: Sender<GalleryEvent>,
     recording: Arc<Mutex<RecordingPresentation>>,
+    recovery_scans: Receiver<()>,
 ) {
     application.connect_activate(move |application| {
         ui::window::present(
@@ -201,6 +205,7 @@ fn connect_activate(
             gallery_events.clone(),
             gallery_event_sender.clone(),
             Arc::clone(&recording),
+            recovery_scans.clone(),
         );
     });
 }
@@ -251,6 +256,7 @@ fn dispatch_commands(
     gallery_events: Sender<GalleryEvent>,
     recording_lifecycle: Sender<RecordingLifecycleEvent>,
     recording_presentation: Arc<Mutex<RecordingPresentation>>,
+    recovery_scans: Sender<()>,
 ) {
     glib::spawn_future_local(async move {
         let mut runtime = None;
@@ -261,6 +267,7 @@ fn dispatch_commands(
                     gallery_events.clone(),
                     recording_lifecycle.clone(),
                     Arc::clone(&recording_presentation),
+                    recovery_scans.clone(),
                 ) {
                     Ok(value) => runtime = Some(value),
                     Err(error) => {
@@ -289,6 +296,7 @@ struct ProductionCaptureRuntime {
     x11_backend: Option<Arc<X11CaptureBackend>>,
     copy_after_capture: bool,
     gif_maximum_duration: Duration,
+    recovery_scans: Sender<()>,
 }
 
 impl ProductionCaptureRuntime {
@@ -296,6 +304,7 @@ impl ProductionCaptureRuntime {
         gallery_events: Sender<GalleryEvent>,
         recording_lifecycle: Sender<RecordingLifecycleEvent>,
         recording_presentation: Arc<Mutex<RecordingPresentation>>,
+        recovery_scans: Sender<()>,
     ) -> Result<Self, KlypseError> {
         let preferences = AppSettings::new().ok();
         let mut paths = AppPaths::discover().map_err(storage_error)?;
@@ -360,6 +369,7 @@ impl ProductionCaptureRuntime {
             x11_backend,
             copy_after_capture,
             gif_maximum_duration,
+            recovery_scans,
         })
     }
 
@@ -401,7 +411,14 @@ impl ProductionCaptureRuntime {
                 Err(error) => capture_error_outcome(error),
             },
             AppCommand::AcknowledgeRecordingFailure => match self.recording.acknowledge_failure() {
-                Ok(()) => CaptureOutcome::Ignored,
+                Ok(()) => {
+                    let _ = self.recovery_scans.try_send(());
+                    CaptureOutcome::Ignored
+                }
+                Err(error) => CaptureOutcome::Failed(error),
+            },
+            AppCommand::CompleteRecordingRecovery => match self.recording.complete_recovery() {
+                Ok(_) => CaptureOutcome::Ignored,
                 Err(error) => CaptureOutcome::Failed(error),
             },
         }
@@ -519,7 +536,12 @@ fn manage_recording_lifecycle(
                     } else if !active {
                         hold_guard = None;
                     }
-                    if matches!(state, RecordingUiState::Idle | RecordingUiState::Failed) {
+                    if matches!(
+                        state,
+                        RecordingUiState::Idle
+                            | RecordingUiState::Failed
+                            | RecordingUiState::RecoveryRequired
+                    ) {
                         generation.set(generation.get().wrapping_add(1));
                     }
                 }

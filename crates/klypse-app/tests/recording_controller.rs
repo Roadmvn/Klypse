@@ -175,7 +175,7 @@ fn successful_stop_persists_before_returning_to_idle() {
 }
 
 #[test]
-fn failed_finalization_retains_the_recovery_marker() {
+fn failed_finalization_requires_recovery_before_another_recording() {
     let mut fixture = Fixture::new(true);
     futures_lite::future::block_on(fixture.controller.start(Fixture::video_request())).unwrap();
 
@@ -184,6 +184,18 @@ fn failed_finalization_retains_the_recovery_marker() {
     assert_eq!(fixture.controller.state(), RecordingUiState::Failed);
 
     fixture.controller.acknowledge_failure().unwrap();
-    assert_eq!(fixture.controller.state(), RecordingUiState::Idle);
+    assert_eq!(
+        fixture.controller.state(),
+        RecordingUiState::RecoveryRequired
+    );
     assert!(fixture.marker().exists());
+
+    let error = futures_lite::future::block_on(fixture.controller.start(Fixture::video_request()))
+        .unwrap_err();
+    assert!(matches!(error, KlypseError::UnavailableCapability(_)));
+
+    fs::remove_file(fixture.marker()).unwrap();
+    fixture.controller.complete_recovery().unwrap();
+    assert_eq!(fixture.controller.state(), RecordingUiState::Idle);
+    futures_lite::future::block_on(fixture.controller.start(Fixture::video_request())).unwrap();
 }

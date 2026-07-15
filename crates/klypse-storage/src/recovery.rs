@@ -510,28 +510,36 @@ fn inspect_png(path: &Path) -> Result<MediaMetadata, StorageError> {
 fn inspect_gif(path: &Path) -> Result<MediaMetadata, StorageError> {
     let decoder = image::codecs::gif::GifDecoder::new(BufReader::new(File::open(path)?))
         .map_err(media_error)?;
-    let frames = decoder
-        .into_frames()
-        .collect_frames()
-        .map_err(media_error)?;
-    let first = frames.first().ok_or_else(|| {
-        StorageError::Recovery("the recovery GIF contains no complete frames".into())
+    let mut frames = decoder.into_frames();
+    let first = frames
+        .next()
+        .transpose()
+        .map_err(media_error)?
+        .ok_or_else(|| {
+            StorageError::Recovery("the recovery GIF contains no complete frames".into())
+        })?;
+    let width = first.buffer().width();
+    let height = first.buffer().height();
+    let duration = frames.try_fold(frame_duration(&first), |duration, frame| {
+        let frame = frame.map_err(media_error)?;
+        Ok::<_, StorageError>(duration.saturating_add(frame_duration(&frame)))
     })?;
-    let duration = frames.iter().fold(Duration::ZERO, |duration, frame| {
-        let (numerator, denominator) = frame.delay().numer_denom_ms();
-        let millis = if denominator == 0 {
-            0
-        } else {
-            u64::from(numerator) / u64::from(denominator)
-        };
-        duration.saturating_add(Duration::from_millis(millis))
-    });
     Ok(MediaMetadata {
         kind: CaptureKind::Gif,
-        width: first.buffer().width(),
-        height: first.buffer().height(),
+        width,
+        height,
         duration: Some(duration),
     })
+}
+
+fn frame_duration(frame: &image::Frame) -> Duration {
+    let (numerator, denominator) = frame.delay().numer_denom_ms();
+    let millis = if denominator == 0 {
+        0
+    } else {
+        u64::from(numerator) / u64::from(denominator)
+    };
+    Duration::from_millis(millis)
 }
 
 fn inspect_webm(path: &Path) -> Result<MediaMetadata, StorageError> {

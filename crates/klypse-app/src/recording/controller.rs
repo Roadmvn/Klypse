@@ -22,6 +22,7 @@ pub enum RecordingUiState {
     Recording,
     Finalizing,
     Failed,
+    RecoveryRequired,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -71,6 +72,7 @@ pub struct RecordingController {
     effects: Arc<dyn RecordingEffects>,
     machine: RecordingMachine,
     active: Option<ActiveRecording>,
+    recovery_required: bool,
 }
 
 impl RecordingController {
@@ -89,11 +91,16 @@ impl RecordingController {
             effects,
             machine: RecordingMachine::idle(),
             active: None,
+            recovery_required: false,
         }
     }
 
     pub fn state(&self) -> RecordingUiState {
-        ui_state(self.machine.state())
+        if self.recovery_required {
+            RecordingUiState::RecoveryRequired
+        } else {
+            ui_state(self.machine.state())
+        }
     }
 
     pub const fn active_session(&self) -> Option<Uuid> {
@@ -118,7 +125,10 @@ impl RecordingController {
     }
 
     pub async fn start(&mut self, request: RecordingRequest) -> Result<Uuid, KlypseError> {
-        if self.machine.state() != RecordingState::Idle || self.active.is_some() {
+        if self.machine.state() != RecordingState::Idle
+            || self.active.is_some()
+            || self.recovery_required
+        {
             return Err(KlypseError::UnavailableCapability(
                 "another recording is already active".into(),
             ));
@@ -237,6 +247,7 @@ impl RecordingController {
         }
         self.machine.finish().map_err(media_error)?;
         self.active = None;
+        self.recovery_required = false;
         self.effects.state_changed(RecordingUiState::Idle);
         Ok(record)
     }
@@ -244,8 +255,25 @@ impl RecordingController {
     pub fn acknowledge_failure(&mut self) -> Result<(), KlypseError> {
         self.machine.acknowledge_failure().map_err(media_error)?;
         self.active = None;
-        self.effects.state_changed(RecordingUiState::Idle);
+        self.recovery_required = self.recovery_marker_path().exists();
+        self.effects.state_changed(if self.recovery_required {
+            RecordingUiState::RecoveryRequired
+        } else {
+            RecordingUiState::Idle
+        });
         Ok(())
+    }
+
+    pub fn complete_recovery(&mut self) -> Result<bool, KlypseError> {
+        if !self.recovery_required {
+            return Ok(false);
+        }
+        if self.recovery_marker_path().exists() {
+            return Ok(false);
+        }
+        self.recovery_required = false;
+        self.effects.state_changed(RecordingUiState::Idle);
+        Ok(true)
     }
 
     fn write_recovery_marker(&self, marker: &RecoveryMarker) -> Result<(), KlypseError> {

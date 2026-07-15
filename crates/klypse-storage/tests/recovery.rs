@@ -1,6 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use chrono::Utc;
+use image::{Delay, Frame, RgbaImage, codecs::gif::GifEncoder};
 use klypse_domain::{CaptureKind, CaptureTarget, DisplayServer};
 use klypse_storage::{
     AppPaths, CaptureRepository, CaptureStore, NewCaptureRecord, Reconciler, open_database,
@@ -71,7 +72,7 @@ fn valid_orphan_is_offered_and_missing_row_is_not_deleted() {
 
     let report = fixture.reconciler.scan().unwrap();
 
-    assert_eq!(report.recoverable.len(), 1);
+    assert_eq!(report.recoverable.len(), 1, "{report:?}");
     assert_eq!(report.recoverable[0].path, orphan);
     assert!(report.unrecoverable.is_empty());
     assert_eq!(report.missing_files.len(), 1);
@@ -179,6 +180,30 @@ fn restoring_a_marked_interrupted_gif_removes_its_exact_marker() {
     assert_eq!(record.id, id);
     assert!(!marker_path.exists());
     assert!(!temporary.exists());
+}
+
+#[test]
+fn animated_gif_recovery_reports_all_frame_delays() {
+    let fixture = Fixture::new();
+    let path = fixture.paths.orphans.join("animation.gif");
+    let file = std::fs::File::create(&path).unwrap();
+    let mut encoder = GifEncoder::new(file);
+    encoder
+        .encode_frames((0..200).map(|index| {
+            let mut pixels = RgbaImage::new(8, 6);
+            pixels.get_pixel_mut(0, 0).0[0] = index as u8;
+            Frame::from_parts(pixels, 0, 0, Delay::from_numer_denom_ms(10, 1))
+        }))
+        .unwrap();
+    drop(encoder);
+
+    let report = fixture.reconciler.scan().unwrap();
+
+    assert_eq!(report.recoverable.len(), 1, "{report:?}");
+    assert_eq!(
+        report.recoverable[0].duration,
+        Some(std::time::Duration::from_secs(2))
+    );
 }
 
 #[test]
