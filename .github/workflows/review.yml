@@ -130,6 +130,7 @@ jobs:
           test -n "$deb"
           bash scripts/test-debian-package.sh "$deb"
           lintian --fail-on error "$deb"
+          bash scripts/test-debian-install.sh "$deb"
           mkdir -p build/debian
           cp "$deb" build/debian/
 
