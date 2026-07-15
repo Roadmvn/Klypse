@@ -4,6 +4,15 @@ set -euo pipefail
 deb="${1:?Debian package path required}"
 test -f "$deb"
 
+depends="$(dpkg-deb --field "$deb" Depends)"
+for dependency in \
+  gstreamer1.0-pipewire \
+  gstreamer1.0-tools \
+  libglib2.0-bin
+do
+  grep -Eq "(^|, )${dependency}([[:space:]]|,|$)" <<<"$depends"
+done
+
 temporary="$(mktemp -d)"
 trap 'rm -rf "$temporary"' EXIT
 
