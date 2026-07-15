@@ -4,10 +4,23 @@ set -euo pipefail
 app_id="io.github.roadmvn.Klypse"
 info="$(mktemp)"
 help="$(mktemp)"
-trap 'rm -f "$info" "$help"' EXIT
+permissions="$(mktemp)"
+trap 'rm -f "$info" "$help" "$permissions"' EXIT
 
 flatpak info --user "$app_id" >"$info"
 grep -Fq "ID: $app_id" "$info"
+
+flatpak info --user --show-permissions "$app_id" >"$permissions"
+grep -Eq '^shared=.*ipc' "$permissions"
+grep -Eq '^sockets=.*(fallback-x11|x11)' "$permissions"
+grep -Eq '^sockets=.*wayland' "$permissions"
+grep -Eq '^devices=.*dri' "$permissions"
+grep -Eq '^filesystems=.*xdg-pictures' "$permissions"
+! grep -Eq '(^|[=;])network(;|$)' "$permissions"
+! grep -Eq '(^|[=;])home(;|$)' "$permissions"
+
+flatpak run --user --command=sh "$app_id" -c \
+  'test -f /app/share/locale/fr/LC_MESSAGES/klypse.mo'
 
 flatpak run --user --command=klypse "$app_id" --help >"$help" 2>&1
 flatpak run --user --command=klypse "$app_id" capture --help >>"$help" 2>&1

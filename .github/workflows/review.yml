@@ -141,10 +141,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  flatpak-manifest:
-    name: Validate Flatpak manifest
+  flatpak-package:
+    name: Build and smoke-test Flatpak
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 45
 
     steps:
       - name: Check out source
@@ -162,3 +162,23 @@ jobs:
           python3 -m json.tool packaging/flatpak/cargo-sources.json >/dev/null
           flatpak-builder --show-manifest \
             packaging/flatpak/io.github.roadmvn.Klypse.yml >/dev/null
+
+      - name: Build, install, and smoke-test the application
+        run: |
+          bash scripts/build-flatpak.sh
+          bash scripts/test-flatpak.sh
+
+      - name: Export Flatpak bundle
+        run: |
+          flatpak build-bundle \
+            build/flatpak-repo \
+            build/Klypse.flatpak \
+            io.github.roadmvn.Klypse
+
+      - name: Publish Flatpak artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: klypse-flatpak-amd64
+          path: build/Klypse.flatpak
+          if-no-files-found: error
+          retention-days: 14
