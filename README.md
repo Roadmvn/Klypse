@@ -23,7 +23,7 @@ The Review workflow also publishes the `.deb` as a CI artifact after every succe
 
 ### Flatpak
 
-Install `flatpak` and `flatpak-builder`, then run:
+Install `flatpak`, `flatpak-builder`, and `elfutils` (for `eu-strip`), then run:
 
 ```bash
 bash scripts/build-flatpak.sh

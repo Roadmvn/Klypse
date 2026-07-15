@@ -5,6 +5,7 @@ sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
 command: klypse
+separate-locales: false
 
 finish-args:
   - --share=ipc
