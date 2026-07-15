@@ -7,6 +7,13 @@ manifest="$root/packaging/flatpak/$app_id.yml"
 build_dir="$root/build/flatpak"
 repository="$root/build/flatpak-repo"
 
+for command in flatpak flatpak-builder eu-strip; do
+  if ! command -v "$command" >/dev/null; then
+    echo "Required Flatpak build command is missing: $command" >&2
+    exit 1
+  fi
+done
+
 if ! flatpak remote-list --user --columns=name | grep -Fxq flathub; then
   flatpak remote-add --user --if-not-exists flathub \
     https://dl.flathub.org/repo/flathub.flatpakrepo
