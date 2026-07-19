@@ -115,17 +115,7 @@ impl GifPipeline {
                 .field("framerate", gst::Fraction::new(config.fps as i32, 1))
                 .build(),
         );
-        let sink = gst::ElementFactory::make("appsink")
-            .name("klypse-gif-sink")
-            .property("sync", true)
-            .property("max-buffers", 2_u32)
-            .property("drop", false)
-            .build()
-            .map_err(gstreamer_error)?;
-        let appsink = sink
-            .clone()
-            .downcast::<gst_app::AppSink>()
-            .map_err(|_| MediaError::Gstreamer("GIF sink has an invalid type".into()))?;
+        let (sink, appsink) = make_gif_appsink()?;
 
         let mut elements = vec![source];
         if let Some(filter) = input_caps {
@@ -264,6 +254,23 @@ impl Drop for GifPipeline {
     }
 }
 
+fn make_gif_appsink() -> Result<(gst::Element, gst_app::AppSink), MediaError> {
+    let sink = gst::ElementFactory::make("appsink")
+        .name("klypse-gif-sink")
+        .property("sync", true)
+        .property("max-buffers", 2_u32)
+        .property("drop", false)
+        .property("wait-on-eos", false)
+        .build()
+        .map_err(gstreamer_error)?;
+    let appsink = sink
+        .clone()
+        .downcast::<gst_app::AppSink>()
+        .map_err(|_| MediaError::Gstreamer("GIF sink has an invalid type".into()))?;
+
+    Ok((sink, appsink))
+}
+
 pub fn validate_gif(path: impl AsRef<Path>) -> Result<(), MediaError> {
     let mut options = gif::DecodeOptions::new();
     options.set_color_output(gif::ColorOutput::RGBA);
@@ -351,5 +358,19 @@ fn scaled_dimensions(width: u32, height: u32, maximum: u32) -> (u32, u32) {
             ((u64::from(width) * u64::from(maximum)) / u64::from(height)).max(1) as u32,
             maximum,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gif_sink_does_not_wait_for_consumers_after_eos() {
+        gst::init().unwrap();
+
+        let (_, appsink) = make_gif_appsink().unwrap();
+
+        assert!(!appsink.property::<bool>("wait-on-eos"));
     }
 }

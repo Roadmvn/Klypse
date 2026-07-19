@@ -12,7 +12,7 @@ appstreamcli validate --no-net \
   crates/klypse-app/resources/io.github.roadmvn.Klypse.metainfo.xml
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
-xvfb-run -a cargo test --workspace --locked
+timeout --foreground 20m xvfb-run -a cargo test --workspace --locked
 cargo build --workspace --release --locked
 cargo deny --all-features check
 
