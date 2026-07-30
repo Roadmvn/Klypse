@@ -1,5 +1,6 @@
 use std::{env, path::Path, process::Command};
 
+use gstreamer as gst;
 use klypse_domain::DisplayServer;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -211,8 +212,5 @@ fn portal_has_owner() -> bool {
 }
 
 fn gst_element_exists(element: &str) -> bool {
-    Command::new("gst-inspect-1.0")
-        .args(["--exists", element])
-        .status()
-        .is_ok_and(|status| status.success())
+    gst::init().is_ok() && gst::ElementFactory::find(element).is_some()
 }

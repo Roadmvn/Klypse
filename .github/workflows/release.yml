@@ -1,0 +1,236 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  preflight:
+    name: Validate release tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      checks: read
+
+    steps:
+      - name: Check out source and full history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate versions, main ancestry, and Review checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]
+          version="${BASH_REMATCH[1]}"
+          cargo_version="$(awk '
+            $0 == "[workspace.package]" { section=1; next }
+            section && /^\[/ { exit }
+            section && /^version = "/ {
+              gsub(/^version = "|"$/, "")
+              print
+              exit
+            }
+          ' Cargo.toml)"
+          debian_version="$(sed -n '1s/^klypse (\([0-9][^-)]*\)-.*/\1/p' debian/changelog)"
+
+          test "$version" = "$cargo_version"
+          test "$version" = "$debian_version"
+          grep -Fq "<release version=\"$version\"" \
+            crates/klypse-app/resources/io.github.roadmvn.Klypse.metainfo.xml
+
+          test "$GITHUB_SHA" = "$(git rev-parse refs/remotes/origin/main)"
+
+          checks="$(gh api \
+            "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?per_page=100")"
+          for required in \
+            "Release verification" \
+            "Build and inspect Debian package" \
+            "Build and smoke-test Flatpak"
+          do
+            conclusion="$(jq -r --arg name "$required" '
+              [.check_runs[] | select(
+                .name == $name and .app.slug == "github-actions"
+              )]
+              | sort_by(.started_at)
+              | last
+              | .conclusion // "missing"
+            ' <<<"$checks")"
+            test "$conclusion" = success || {
+              echo "$required: $conclusion" >&2
+              exit 1
+            }
+          done
+
+  debian:
+    name: Build Debian release package
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Debian build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            appstream \
+            build-essential \
+            cargo \
+            debhelper \
+            desktop-file-utils \
+            dpkg-dev \
+            gettext \
+            gstreamer1.0-libav \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            libadwaita-1-dev \
+            libgettextpo-dev \
+            libglib2.0-bin \
+            libgstreamer-plugins-base1.0-dev \
+            libgstreamer1.0-dev \
+            libgtk-4-dev \
+            libpipewire-0.3-dev \
+            libsqlite3-dev \
+            libxcb-composite0-dev \
+            libxcb-randr0-dev \
+            libxcb-xfixes0-dev \
+            libxcb1-dev \
+            lintian \
+            pkg-config \
+            rustc
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build data
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build and smoke-test package
+        run: |
+          set -euo pipefail
+          DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -us -uc -b
+          deb="$(find .. -maxdepth 1 -name 'klypse_*_amd64.deb' -print -quit)"
+          test -n "$deb"
+          bash scripts/test-debian-package.sh "$deb"
+          lintian --fail-on error "$deb"
+          bash scripts/test-debian-install.sh "$deb"
+          mkdir -p dist
+          cp "$deb" dist/
+
+      - name: Stage Debian release asset
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-debian
+          path: dist/*.deb
+          if-no-files-found: error
+          retention-days: 7
+
+  flatpak:
+    name: Build Flatpak release bundle
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Flatpak tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            elfutils \
+            flatpak-builder \
+            librsvg2-common
+
+      - name: Build, install, and smoke-test Flatpak
+        run: |
+          set -euo pipefail
+          python3 -m json.tool packaging/flatpak/cargo-sources.json >/dev/null
+          flatpak-builder --show-manifest \
+            packaging/flatpak/io.github.roadmvn.Klypse.yml >/dev/null
+          bash scripts/build-flatpak.sh
+          bash scripts/test-flatpak.sh
+          flatpak build-bundle \
+            build/flatpak-repo \
+            build/Klypse.flatpak \
+            io.github.roadmvn.Klypse
+
+      - name: Stage Flatpak release asset
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-flatpak
+          path: build/Klypse.flatpak
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub Release
+    needs: [preflight, debian, flatpak]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Debian asset
+        uses: actions/download-artifact@v8
+        with:
+          name: release-debian
+          path: dist
+
+      - name: Download Flatpak asset
+        uses: actions/download-artifact@v8
+        with:
+          name: release-flatpak
+          path: dist
+
+      - name: Generate checksums and publish
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(find dist -maxdepth 1 -name '*.deb' | wc -l)" -eq 1
+          test -f dist/Klypse.flatpak
+          (cd dist && sha256sum *.deb Klypse.flatpak > SHA256SUMS)
+
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            draft="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)"
+            test "$draft" = true || {
+              echo "Release already published; refusing to replace immutable assets" >&2
+              exit 1
+            }
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --draft \
+              --verify-tag \
+              --generate-notes \
+              --title "Klypse ${GITHUB_REF_NAME#v}"
+          fi
+
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest

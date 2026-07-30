@@ -144,7 +144,11 @@ impl PortalRecordingClient for AshpdRecordingClient {
                 Some((u32::try_from(width).ok()?, u32::try_from(height).ok()?))
             })
             .filter(|(width, height)| *width > 0 && *height > 0)
-            .unwrap_or((1, 1));
+            .ok_or_else(|| {
+                PortalRecordingClientError::Unavailable(
+                    "the screencast portal did not report valid stream dimensions".into(),
+                )
+            })?;
         let remote_fd = proxy
             .open_pipe_wire_remote(&session, OpenPipeWireRemoteOptions::default())
             .await

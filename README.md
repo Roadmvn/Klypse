@@ -6,32 +6,33 @@ Klypse is a native Linux screenshot and screen-recording workspace for X11 and W
 
 The 0.1.0 MVP includes region, screen, window, and active-window capture; video and GIF recording; clipboard copy and drag; a non-destructive annotation editor; configurable global shortcuts; recovery after interrupted writes; and English/French UI. Klypse does not upload captures or make application-level network requests.
 
-## Install
+## Download and install
 
-### Debian package
-
-Build and inspect the package in the reproducible Debian container:
+Download the current packages from the [latest Klypse release](https://github.com/Roadmvn/Klypse/releases/latest). Packages are currently provided for 64-bit x86 Linux (`amd64`/`x86_64`). Verify the downloaded files with:
 
 ```bash
-./scripts/build-debian-package.sh
-./scripts/dev-container.sh bash scripts/test-debian-package.sh \
-  build/debian/klypse_0.1.0-1_amd64.deb
-sudo apt install ./build/debian/klypse_0.1.0-1_amd64.deb
+sha256sum -c SHA256SUMS
 ```
 
-The Review workflow also publishes the `.deb` as a CI artifact after every successful `main` build.
+### Debian, Ubuntu, and Kali
+
+The `.deb` targets Debian 13, Ubuntu 24.04, Kali Rolling, and newer compatible systems. After downloading it:
+
+```bash
+sudo apt install ./klypse_*_amd64.deb
+klypse open
+```
 
 ### Flatpak
 
-Install `flatpak`, `flatpak-builder`, `elfutils` (for `eu-strip`), and the SVG
-loader package (`librsvg2-common` on Debian/Ubuntu), then run:
+Use the Flatpak bundle on other recent distributions. It supports Wayland and fallback X11:
 
 ```bash
-bash scripts/build-flatpak.sh
-bash scripts/test-flatpak.sh
+flatpak remote-add --user --if-not-exists flathub \
+  https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --user ./Klypse.flatpak
+flatpak run io.github.roadmvn.Klypse -- open
 ```
-
-The script installs the GNOME 50 SDK/runtime from Flathub when needed, builds Cargo dependencies offline from the committed lockfile sources, exports `build/flatpak-repo`, and installs `io.github.roadmvn.Klypse` for the current user.
 
 The sandbox grants Wayland, fallback X11, GPU acceleration, and `xdg-pictures`. It does not grant network, full home-directory, or raw host D-Bus access.
 
@@ -63,9 +64,11 @@ Default shortcuts:
 | Record GIF | `Ctrl+Shift+Print` |
 | Stop recording | `Ctrl+Shift+Escape` |
 
-On X11, Klypse uses its direct capture backend and selection overlay. On Wayland, it uses the desktop Screenshot, ScreenCast/PipeWire, and GlobalShortcuts portals; the compositor owns the secure picker. If the Wayland shortcut portal is unavailable, configure the desktop environment to invoke the CLI commands above.
+On X11, Klypse uses its direct capture backend and selection overlay. On Wayland, it uses the desktop Screenshot, ScreenCast/PipeWire, and GlobalShortcuts portals; the compositor owns the secure picker. For area recording, current Wayland portals may offer a monitor or window rather than a free-form rectangle. If the Wayland shortcut portal is unavailable, configure the desktop environment to invoke the CLI commands above.
 
 The editor supports rectangle, ellipse, line, arrow, text, freehand, crop, pixelation, and blur tools, plus undo/redo, zoom, non-destructive save, flattened export, and clipboard copy.
+
+For a Flatpak installation, replace `klypse` in the examples with `flatpak run io.github.roadmvn.Klypse --`.
 
 ## Local data and privacy
 
@@ -97,13 +100,23 @@ Package removal intentionally preserves captures and native user data. `flatpak 
 
 On Debian-compatible systems, `./scripts/bootstrap-debian.sh` installs prerequisites when passwordless sudo is available, or prepares the development container when Docker is available.
 
+Build packages locally:
+
+```bash
+./scripts/build-debian-package.sh
+./scripts/dev-container.sh bash scripts/test-debian-package.sh \
+  build/debian/klypse_0.1.0-1_amd64.deb
+bash scripts/build-flatpak.sh
+bash scripts/test-flatpak.sh
+```
+
 Run the complete release gate:
 
 ```bash
 ./scripts/dev-container.sh bash scripts/verify-release.sh
 ```
 
-It checks formatting, translations, Desktop/AppStream metadata, Clippy with warnings denied, the full workspace test suite both normally and under Xvfb, the release build, dependency advisories, licences, and source policy. Pass a `.deb` path as the first argument to include its content smoke test. Set `KLYPSE_VERIFY_FLATPAK=1` when the Flatpak is installed in the current environment.
+It checks formatting, translations, Desktop/AppStream metadata, Clippy with warnings denied, workspace coverage split into bounded runs, targeted X11/GTK smoke tests under Xvfb, the release build, dependency advisories, licences, and source policy. Pass a `.deb` path as the first argument to include its content smoke test. Set `KLYPSE_VERIFY_FLATPAK=1` when the Flatpak is installed in the current environment.
 
 See [the Linux compatibility matrix](docs/testing/linux-compatibility-matrix.md) for the distinction between automated coverage and manual desktop-session validation.
 
