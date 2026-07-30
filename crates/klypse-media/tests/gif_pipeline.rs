@@ -38,6 +38,30 @@ fn ten_frame_test_source_writes_ten_frame_gif() {
 }
 
 #[test]
+fn oversized_source_preserves_aspect_ratio_at_the_gif_limit() {
+    if !["videotestsrc", "appsink"]
+        .into_iter()
+        .all(gstreamer_element_exists)
+    {
+        return;
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let output = directory.path().join("scaled.gif");
+    let source = PipelineSource::test_frames(1_920, 1_080, 2, 5).unwrap();
+    let pipeline = GifPipeline::start(
+        source,
+        &output,
+        GifPipelineConfig::new(5, Duration::from_secs(1)).unwrap(),
+    )
+    .unwrap();
+    thread::sleep(Duration::from_millis(500));
+
+    let artifact = pipeline.stop().unwrap();
+
+    assert_eq!((artifact.width, artifact.height), (1_280, 720));
+}
+
+#[test]
 fn config_rejects_more_than_thirty_seconds_and_invalid_fps() {
     assert!(GifPipelineConfig::new(12, Duration::from_secs(31)).is_err());
     assert!(GifPipelineConfig::new(0, Duration::from_secs(10)).is_err());

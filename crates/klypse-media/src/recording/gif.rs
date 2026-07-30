@@ -64,13 +64,13 @@ impl Default for GifPipelineConfig {
 
 struct WorkerResult {
     frame_count: u64,
+    width: u32,
+    height: u32,
 }
 
 pub struct GifPipeline {
     pipeline: gst::Pipeline,
     path: std::path::PathBuf,
-    width: u32,
-    height: u32,
     delay_hundredths: u16,
     worker: Option<JoinHandle<Result<WorkerResult, MediaError>>>,
     worker_stop: Arc<AtomicBool>,
@@ -92,8 +92,7 @@ impl GifPipeline {
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent)?;
         }
-        let (source, source_caps, source_width, source_height, source_guard) = source.into_parts();
-        let (width, height) = scaled_dimensions(source_width, source_height, MAX_EDGE);
+        let (source, source_caps, _, _, source_guard) = source.into_parts();
         let pipeline = gst::Pipeline::new();
         let input_caps = source_caps
             .map(|caps| {
@@ -110,8 +109,9 @@ impl GifPipeline {
             "caps",
             gst::Caps::builder("video/x-raw")
                 .field("format", "RGBA")
-                .field("width", width as i32)
-                .field("height", height as i32)
+                .field("width", gst::IntRange::<i32>::new(1, MAX_EDGE as i32))
+                .field("height", gst::IntRange::<i32>::new(1, MAX_EDGE as i32))
+                .field("pixel-aspect-ratio", gst::Fraction::new(1, 1))
                 .field("framerate", gst::Fraction::new(config.fps as i32, 1))
                 .build(),
         );
@@ -129,24 +129,15 @@ impl GifPipeline {
 
         let delay_hundredths = ((100.0 / f64::from(config.fps)).round() as u16).max(1);
         let worker_stop = Arc::new(AtomicBool::new(false));
-        let worker = std::thread::spawn({
-            let destination = destination.clone();
-            let worker_stop = Arc::clone(&worker_stop);
-            move || {
-                encode_samples(
-                    appsink,
-                    &destination,
-                    width,
-                    height,
-                    delay_hundredths,
-                    worker_stop,
-                )
-            }
-        });
-
         pipeline
             .set_state(gst::State::Playing)
             .map_err(gstreamer_error)?;
+        let worker = std::thread::spawn({
+            let destination = destination.clone();
+            let worker_stop = Arc::clone(&worker_stop);
+            move || encode_samples(appsink, &destination, delay_hundredths, worker_stop)
+        });
+
         let (automatic_cancel, automatic_receiver) = mpsc::channel();
         let automatic_stop_due = Arc::new(AtomicBool::new(false));
         let automatic_thread = std::thread::spawn({
@@ -166,8 +157,6 @@ impl GifPipeline {
         Ok(Self {
             pipeline,
             path: destination,
-            width,
-            height,
             delay_hundredths,
             worker: Some(worker),
             worker_stop,
@@ -231,8 +220,8 @@ impl GifPipeline {
         Ok(RecordingArtifact {
             file_size: file_size(&self.path)?,
             path: self.path.clone(),
-            width: self.width,
-            height: self.height,
+            width: worker.width,
+            height: worker.height,
             duration,
         })
     }
@@ -290,11 +279,38 @@ pub fn validate_gif(path: impl AsRef<Path>) -> Result<(), MediaError> {
 fn encode_samples(
     appsink: gst_app::AppSink,
     destination: &Path,
-    width: u32,
-    height: u32,
     delay_hundredths: u16,
     stop: Arc<AtomicBool>,
 ) -> Result<WorkerResult, MediaError> {
+    let first_sample = loop {
+        if stop.load(Ordering::Acquire) {
+            return Err(finalization_error(
+                "GIF recording stopped before receiving its first frame",
+            ));
+        }
+        if let Some(sample) = appsink.try_pull_sample(gst::ClockTime::from_mseconds(100)) {
+            break sample;
+        }
+        if appsink.is_eos() {
+            return Err(finalization_error(
+                "GIF recording reached EOS before receiving its first frame",
+            ));
+        }
+    };
+    let first_caps = first_sample
+        .caps()
+        .ok_or_else(|| MediaError::Gstreamer("GIF frame has no caps".into()))?;
+    let first_info = VideoInfo::from_caps(first_caps).map_err(gstreamer_error)?;
+    let width = first_info.width();
+    let height = first_info.height();
+    if width == 0 || height == 0 || width > MAX_EDGE || height > MAX_EDGE {
+        return Err(MediaError::Gstreamer(
+            "GIF negotiated invalid output dimensions".into(),
+        ));
+    }
+    let negotiated_caps = first_caps.to_owned();
+    appsink.set_caps(Some(&negotiated_caps));
+
     let file = File::create(destination)?;
     let mut writer = BufWriter::new(file);
     let mut frame_count = 0_u64;
@@ -304,6 +320,8 @@ fn encode_samples(
         encoder
             .set_repeat(gif::Repeat::Infinite)
             .map_err(|error| MediaError::Gstreamer(error.to_string()))?;
+        encode_sample(&mut encoder, &first_sample, width, height, delay_hundredths)?;
+        frame_count += 1;
         while !stop.load(Ordering::Acquire) {
             let Some(sample) = appsink.try_pull_sample(gst::ClockTime::from_mseconds(100)) else {
                 if appsink.is_eos() {
@@ -311,54 +329,56 @@ fn encode_samples(
                 }
                 continue;
             };
-            let caps = sample
-                .caps()
-                .ok_or_else(|| MediaError::Gstreamer("GIF frame has no caps".into()))?;
-            let info = VideoInfo::from_caps(caps).map_err(gstreamer_error)?;
-            let buffer = sample
-                .buffer()
-                .ok_or_else(|| MediaError::Gstreamer("GIF frame has no buffer".into()))?;
-            let map = buffer.map_readable().map_err(gstreamer_error)?;
-            let stride = usize::try_from(info.stride()[0])
-                .map_err(|_| MediaError::Gstreamer("GIF frame has a negative stride".into()))?;
-            let row_bytes = width as usize * 4;
-            let mut rgba = Vec::with_capacity(row_bytes * height as usize);
-            for row in 0..height as usize {
-                let start = row * stride;
-                let end = start + row_bytes;
-                rgba.extend_from_slice(map.as_slice().get(start..end).ok_or_else(|| {
-                    MediaError::Gstreamer("GIF frame buffer is shorter than its caps".into())
-                })?);
-            }
-            let mut frame =
-                gif::Frame::from_rgba_speed(width as u16, height as u16, rgba.as_mut_slice(), 10);
-            frame.delay = delay_hundredths;
-            encoder
-                .write_frame(&frame)
-                .map_err(|error| MediaError::Gstreamer(error.to_string()))?;
+            encode_sample(&mut encoder, &sample, width, height, delay_hundredths)?;
             frame_count += 1;
         }
     }
     writer.flush()?;
     writer.get_ref().sync_all()?;
-    Ok(WorkerResult { frame_count })
+    Ok(WorkerResult {
+        frame_count,
+        width,
+        height,
+    })
 }
 
-fn scaled_dimensions(width: u32, height: u32, maximum: u32) -> (u32, u32) {
-    if width <= maximum && height <= maximum {
-        return (width, height);
+fn encode_sample<W: Write>(
+    encoder: &mut gif::Encoder<W>,
+    sample: &gst::Sample,
+    width: u32,
+    height: u32,
+    delay_hundredths: u16,
+) -> Result<(), MediaError> {
+    let caps = sample
+        .caps()
+        .ok_or_else(|| MediaError::Gstreamer("GIF frame has no caps".into()))?;
+    let info = VideoInfo::from_caps(caps).map_err(gstreamer_error)?;
+    if info.width() != width || info.height() != height {
+        return Err(MediaError::Gstreamer(
+            "GIF frame dimensions changed during recording".into(),
+        ));
     }
-    if width >= height {
-        (
-            maximum,
-            ((u64::from(height) * u64::from(maximum)) / u64::from(width)).max(1) as u32,
-        )
-    } else {
-        (
-            ((u64::from(width) * u64::from(maximum)) / u64::from(height)).max(1) as u32,
-            maximum,
-        )
+    let buffer = sample
+        .buffer()
+        .ok_or_else(|| MediaError::Gstreamer("GIF frame has no buffer".into()))?;
+    let map = buffer.map_readable().map_err(gstreamer_error)?;
+    let stride = usize::try_from(info.stride()[0])
+        .map_err(|_| MediaError::Gstreamer("GIF frame has a negative stride".into()))?;
+    let row_bytes = width as usize * 4;
+    let mut rgba = Vec::with_capacity(row_bytes * height as usize);
+    for row in 0..height as usize {
+        let start = row * stride;
+        let end = start + row_bytes;
+        rgba.extend_from_slice(map.as_slice().get(start..end).ok_or_else(|| {
+            MediaError::Gstreamer("GIF frame buffer is shorter than its caps".into())
+        })?);
     }
+    let mut frame =
+        gif::Frame::from_rgba_speed(width as u16, height as u16, rgba.as_mut_slice(), 10);
+    frame.delay = delay_hundredths;
+    encoder
+        .write_frame(&frame)
+        .map_err(|error| MediaError::Gstreamer(error.to_string()))
 }
 
 #[cfg(test)]

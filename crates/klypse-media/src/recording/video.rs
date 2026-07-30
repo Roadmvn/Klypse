@@ -39,8 +39,6 @@ impl Default for VideoPipelineConfig {
 pub struct VideoPipeline {
     pipeline: gst::Pipeline,
     path: std::path::PathBuf,
-    width: u32,
-    height: u32,
     _source_guard: Option<Box<dyn Any + Send>>,
 }
 
@@ -56,7 +54,7 @@ impl VideoPipeline {
         if let Some(parent) = destination.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let (source, source_caps, width, height, source_guard) = source.into_parts();
+        let (source, source_caps, _, _, source_guard) = source.into_parts();
         let pipeline = gst::Pipeline::new();
         let input_caps = source_caps
             .map(|caps| {
@@ -105,8 +103,6 @@ impl VideoPipeline {
         Ok(Self {
             pipeline,
             path: destination,
-            width,
-            height,
             _source_guard: source_guard,
         })
     }
@@ -153,19 +149,18 @@ impl VideoPipeline {
             .duration()
             .map(|value| Duration::from_nanos(value.nseconds()))
             .ok_or_else(|| finalization_error("the finalized WebM has no duration"))?;
+        let width = video.width();
+        let height = video.height();
+        if width == 0 || height == 0 {
+            return Err(finalization_error(
+                "the finalized WebM has invalid video dimensions",
+            ));
+        }
         Ok(RecordingArtifact {
             file_size: file_size(&self.path)?,
             path: self.path.clone(),
-            width: if video.width() == 0 {
-                self.width
-            } else {
-                video.width()
-            },
-            height: if video.height() == 0 {
-                self.height
-            } else {
-                video.height()
-            },
+            width,
+            height,
             duration,
         })
     }
