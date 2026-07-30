@@ -35,7 +35,6 @@ timeout --kill-after=30s 10m xvfb-run -a \
     --test gallery_scale \
     --test recording_ui \
     --test recovery_ui
-cargo build --workspace --release --locked
 cargo deny --all-features check
 
 if [[ $# -gt 0 ]]; then

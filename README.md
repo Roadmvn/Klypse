@@ -116,7 +116,7 @@ Run the complete release gate:
 ./scripts/dev-container.sh bash scripts/verify-release.sh
 ```
 
-It checks formatting, translations, Desktop/AppStream metadata, Clippy with warnings denied, workspace coverage split into bounded runs, targeted X11/GTK smoke tests under Xvfb, the release build, dependency advisories, licences, and source policy. Pass a `.deb` path as the first argument to include its content smoke test. Set `KLYPSE_VERIFY_FLATPAK=1` when the Flatpak is installed in the current environment.
+It checks formatting, translations, Desktop/AppStream metadata, Clippy with warnings denied, workspace coverage split into bounded runs, targeted X11/GTK smoke tests under Xvfb, dependency advisories, licences, and source policy. The parallel Debian and Flatpak jobs provide the release-build checks. Pass a `.deb` path as the first argument to include its content smoke test. Set `KLYPSE_VERIFY_FLATPAK=1` when the Flatpak is installed in the current environment.
 
 See [the Linux compatibility matrix](docs/testing/linux-compatibility-matrix.md) for the distinction between automated coverage and manual desktop-session validation.
 
