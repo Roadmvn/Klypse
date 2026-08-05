@@ -60,6 +60,8 @@ fn virtualized_gallery_realizes_at_most_three_pages_of_cards() {
         .count();
     assert!(realized > 0);
     assert!(realized <= 150, "realized {realized} gallery cards");
+    assert!(button_by_label(&gallery, "Copy").is_sensitive());
+    assert!(button_by_label(&gallery, "Edit").is_sensitive());
     window.close();
 }
 
@@ -118,4 +120,12 @@ fn descendants(root: &impl IsA<gtk::Widget>) -> Vec<gtk::Widget> {
         descendants.push(widget);
     }
     descendants
+}
+
+fn button_by_label(root: &impl IsA<gtk::Widget>, label: &str) -> gtk::Button {
+    descendants(root)
+        .into_iter()
+        .filter_map(|widget| widget.downcast::<gtk::Button>().ok())
+        .find(|button| button.label().as_deref() == Some(label))
+        .unwrap_or_else(|| panic!("button {label:?} was not found"))
 }

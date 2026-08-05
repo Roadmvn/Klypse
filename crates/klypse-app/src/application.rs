@@ -48,6 +48,7 @@ pub fn run() -> glib::ExitCode {
     let (recording_lifecycle_sender, recording_lifecycle_receiver) = async_channel::unbounded();
     let (recovery_scan_sender, recovery_scan_receiver) = async_channel::unbounded();
     let recording_presentation = Arc::new(Mutex::new(RecordingPresentation::default()));
+    let ui_notifier = ui::window::UiNotifier::default();
 
     connect_activate(
         &application,
@@ -56,6 +57,7 @@ pub fn run() -> glib::ExitCode {
         gallery_event_sender.clone(),
         Arc::clone(&recording_presentation),
         recovery_scan_receiver,
+        ui_notifier.clone(),
     );
     connect_command_line(&application, sender.clone());
     connect_open_capture_action(&application, gallery_event_sender.clone());
@@ -68,6 +70,7 @@ pub fn run() -> glib::ExitCode {
         recording_lifecycle_sender,
         recording_presentation,
         recovery_scan_sender,
+        ui_notifier,
     );
 
     application.run()
@@ -197,6 +200,7 @@ fn connect_activate(
     gallery_event_sender: Sender<GalleryEvent>,
     recording: Arc<Mutex<RecordingPresentation>>,
     recovery_scans: Receiver<()>,
+    notifier: ui::window::UiNotifier,
 ) {
     application.connect_activate(move |application| {
         ui::window::present(
@@ -206,6 +210,7 @@ fn connect_activate(
             gallery_event_sender.clone(),
             Arc::clone(&recording),
             recovery_scans.clone(),
+            notifier.clone(),
         );
     });
 }
@@ -257,6 +262,7 @@ fn dispatch_commands(
     recording_lifecycle: Sender<RecordingLifecycleEvent>,
     recording_presentation: Arc<Mutex<RecordingPresentation>>,
     recovery_scans: Sender<()>,
+    notifier: ui::window::UiNotifier,
 ) {
     glib::spawn_future_local(async move {
         let mut runtime = None;
@@ -272,6 +278,7 @@ fn dispatch_commands(
                     Ok(value) => runtime = Some(value),
                     Err(error) => {
                         tracing::error!(%error, "capture runtime is unavailable");
+                        notifier.show_error(format!("{}: {error}", gettext("Action failed")));
                         continue;
                     }
                 }
@@ -284,6 +291,7 @@ fn dispatch_commands(
                 CaptureOutcome::Cancelled | CaptureOutcome::Ignored => {}
                 CaptureOutcome::Failed(error) => {
                     tracing::error!(%error, "capture failed");
+                    notifier.show_error(format!("{}: {error}", gettext("Action failed")));
                 }
             }
         }

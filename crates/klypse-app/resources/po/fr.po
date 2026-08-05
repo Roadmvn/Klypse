@@ -96,6 +96,9 @@ msgstr "Finalisation de l’enregistrement"
 msgid "Recording failed"
 msgstr "Échec de l’enregistrement"
 
+msgid "Action failed"
+msgstr "Échec de l’action"
+
 msgid "Recovery needed"
 msgstr "Récupération nécessaire"
 
@@ -149,6 +152,12 @@ msgstr "Annuler"
 
 msgid "Redo"
 msgstr "Rétablir"
+
+msgid "Delete last annotation"
+msgstr "Supprimer la dernière annotation"
+
+msgid "Capture preview"
+msgstr "Aperçu de la capture"
 
 msgid "Zoom out"
 msgstr "Réduire le zoom"

@@ -59,6 +59,26 @@ fn undo_redo_and_zoom_preserve_image_coordinates() {
 }
 
 #[test]
+fn deleting_the_last_annotation_can_be_undone_and_redone() {
+    let mut editor = EditorController::new(100, 100).unwrap();
+    editor.set_tool(EditorTool::Line);
+    editor.pointer_down(point(10.0, 10.0)).unwrap();
+    editor.pointer_up(point(30.0, 30.0)).unwrap();
+
+    assert!(editor.can_delete_last_layer());
+    assert!(editor.delete_last_layer().unwrap());
+    assert!(!editor.can_delete_last_layer());
+
+    editor.undo().unwrap();
+    assert!(editor.can_delete_last_layer());
+    assert_eq!(editor.document().layers.len(), 1);
+
+    editor.redo().unwrap();
+    assert!(!editor.can_delete_last_layer());
+    assert!(editor.document().layers.is_empty());
+}
+
+#[test]
 fn text_and_crop_commit_only_valid_actions() {
     let mut editor = EditorController::new(100, 100).unwrap();
     editor.set_tool(EditorTool::Text);

@@ -89,6 +89,13 @@ impl EditorView {
             .icon_name("edit-redo-symbolic")
             .tooltip_text(gettext("Redo"))
             .build();
+        let delete = gtk::Button::builder()
+            .icon_name("edit-delete-symbolic")
+            .tooltip_text(gettext("Delete last annotation"))
+            .build();
+        undo.set_sensitive(false);
+        redo.set_sensitive(false);
+        delete.set_sensitive(false);
         let zoom_out = gtk::Button::builder()
             .icon_name("zoom-out-symbolic")
             .tooltip_text(gettext("Zoom out"))
@@ -106,6 +113,7 @@ impl EditorView {
         for (button, label) in [
             (&undo, gettext("Undo")),
             (&redo, gettext("Redo")),
+            (&delete, gettext("Delete last annotation")),
             (&zoom_out, gettext("Zoom out")),
             (&zoom_in, gettext("Zoom in")),
         ] {
@@ -114,6 +122,7 @@ impl EditorView {
         for widget in [
             undo.clone().upcast::<gtk::Widget>(),
             redo.clone().upcast(),
+            delete.clone().upcast(),
             zoom_out.clone().upcast(),
             zoom_label.clone().upcast(),
             zoom_in.clone().upcast(),
@@ -226,13 +235,20 @@ impl EditorView {
             let picture = picture.clone();
             let canvas = canvas.clone();
             let zoom_label = zoom_label.clone();
+            let undo = undo.clone();
+            let redo = redo.clone();
+            let delete = delete.clone();
             move || {
+                let controller = controller.borrow();
                 if let Err(error) =
-                    refresh_preview(&controller.borrow(), source.as_slice(), &picture, &canvas)
+                    refresh_preview(&controller, source.as_slice(), &picture, &canvas)
                 {
                     tracing::warn!(%error, "editor preview could not be refreshed");
                 }
-                zoom_label.set_label(&format!("{:.0}%", controller.borrow().zoom() * 100.0));
+                zoom_label.set_label(&format!("{:.0}%", controller.zoom() * 100.0));
+                undo.set_sensitive(controller.can_undo());
+                redo.set_sensitive(controller.can_redo());
+                delete.set_sensitive(controller.can_delete_last_layer());
             }
         });
 
@@ -241,7 +257,8 @@ impl EditorView {
             let controller = Rc::clone(&controller);
             let refresh = Rc::clone(&refresh);
             move |_, x, y| {
-                if controller.borrow_mut().pointer_down(Point { x, y }).is_ok() {
+                let updated = controller.borrow_mut().pointer_down(Point { x, y }).is_ok();
+                if updated {
                     refresh();
                 }
             }
@@ -250,16 +267,17 @@ impl EditorView {
             let controller = Rc::clone(&controller);
             let refresh = Rc::clone(&refresh);
             move |gesture, offset_x, offset_y| {
-                if let Some((start_x, start_y)) = gesture.start_point()
-                    && controller
+                if let Some((start_x, start_y)) = gesture.start_point() {
+                    let updated = controller
                         .borrow_mut()
                         .pointer_move(Point {
                             x: start_x + offset_x,
                             y: start_y + offset_y,
                         })
-                        .is_ok()
-                {
-                    refresh();
+                        .is_ok();
+                    if updated {
+                        refresh();
+                    }
                 }
             }
         });
@@ -268,19 +286,20 @@ impl EditorView {
             let refresh = Rc::clone(&refresh);
             let text = text.clone();
             move |gesture, offset_x, offset_y| {
-                if let Some((start_x, start_y)) = gesture.start_point()
-                    && controller
+                if let Some((start_x, start_y)) = gesture.start_point() {
+                    let updated = controller
                         .borrow_mut()
                         .pointer_up(Point {
                             x: start_x + offset_x,
                             y: start_y + offset_y,
                         })
-                        .is_ok()
-                {
-                    if controller.borrow().active_tool() == EditorTool::Text {
-                        text.grab_focus();
+                        .is_ok();
+                    if updated {
+                        if controller.borrow().active_tool() == EditorTool::Text {
+                            text.grab_focus();
+                        }
+                        refresh();
                     }
-                    refresh();
                 }
             }
         });
@@ -290,11 +309,11 @@ impl EditorView {
             let controller = Rc::clone(&controller);
             let refresh = Rc::clone(&refresh);
             move |entry| {
-                if controller
+                let updated = controller
                     .borrow_mut()
                     .set_text(entry.text().as_str())
-                    .is_ok()
-                {
+                    .is_ok();
+                if updated {
                     entry.set_text("");
                     refresh();
                 }
@@ -306,11 +325,11 @@ impl EditorView {
             let refresh = Rc::clone(&refresh);
             let text = text.clone();
             move |_| {
-                if controller
+                let updated = controller
                     .borrow_mut()
                     .set_text(text.text().as_str())
-                    .is_ok()
-                {
+                    .is_ok();
+                if updated {
                     text.set_text("");
                     refresh();
                 }
@@ -343,7 +362,8 @@ impl EditorView {
             let controller = Rc::clone(&controller);
             let refresh = Rc::clone(&refresh);
             move |_| {
-                if controller.borrow_mut().undo().is_ok() {
+                let updated = controller.borrow_mut().undo().is_ok();
+                if updated {
                     refresh();
                 }
             }
@@ -352,7 +372,18 @@ impl EditorView {
             let controller = Rc::clone(&controller);
             let refresh = Rc::clone(&refresh);
             move |_| {
-                if controller.borrow_mut().redo().is_ok() {
+                let updated = controller.borrow_mut().redo().is_ok();
+                if updated {
+                    refresh();
+                }
+            }
+        });
+        delete.connect_clicked({
+            let controller = Rc::clone(&controller);
+            let refresh = Rc::clone(&refresh);
+            move |_| {
+                let updated = controller.borrow_mut().delete_last_layer().unwrap_or(false);
+                if updated {
                     refresh();
                 }
             }
@@ -361,7 +392,8 @@ impl EditorView {
             let controller = Rc::clone(&controller);
             let refresh = Rc::clone(&refresh);
             move |_| {
-                if controller.borrow_mut().zoom_by(1.0 / ZOOM_STEP).is_ok() {
+                let updated = controller.borrow_mut().zoom_by(1.0 / ZOOM_STEP).is_ok();
+                if updated {
                     refresh();
                 }
             }
@@ -370,7 +402,8 @@ impl EditorView {
             let controller = Rc::clone(&controller);
             let refresh = Rc::clone(&refresh);
             move |_| {
-                if controller.borrow_mut().zoom_by(ZOOM_STEP).is_ok() {
+                let updated = controller.borrow_mut().zoom_by(ZOOM_STEP).is_ok();
+                if updated {
                     refresh();
                 }
             }
@@ -442,7 +475,7 @@ impl EditorView {
                 }
             }
         });
-        canvas.add_controller(keys);
+        root.add_controller(keys);
         refresh();
 
         Ok(Self {

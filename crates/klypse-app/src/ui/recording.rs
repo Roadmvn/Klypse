@@ -8,7 +8,7 @@ use gtk::{Align, Orientation, glib, prelude::*};
 use klypse_domain::{
     AppCommand, CaptureKind, CaptureRequest, CaptureTarget, GIF_MAX_DURATION, RecordingRequest,
 };
-use klypse_platform::CapabilityReport;
+use klypse_platform::{CapabilityReport, CapabilityStatus};
 
 use crate::{i18n::gettext, recording::RecordingUiState};
 
@@ -147,6 +147,7 @@ fn idle_actions(commands: &Sender<AppCommand>, capabilities: &CapabilityReport) 
     ] {
         let command = commands.clone();
         let button = gtk::Button::with_label(&label);
+        apply_capability(&button, &capabilities.static_capture);
         button.connect_clicked(move |_| {
             let _ = command.try_send(AppCommand::Capture(CaptureRequest::new(target)));
         });
@@ -157,7 +158,7 @@ fn idle_actions(commands: &Sender<AppCommand>, capabilities: &CapabilityReport) 
         CaptureKind::Video,
         CaptureTarget::Area,
         None,
-        capabilities.video_recording.available,
+        &capabilities.video_recording,
         commands,
     ));
     actions.append(&record_button(
@@ -165,7 +166,7 @@ fn idle_actions(commands: &Sender<AppCommand>, capabilities: &CapabilityReport) 
         CaptureKind::Video,
         CaptureTarget::Screen,
         None,
-        capabilities.video_recording.available,
+        &capabilities.video_recording,
         commands,
     ));
     actions.append(&record_button(
@@ -173,7 +174,7 @@ fn idle_actions(commands: &Sender<AppCommand>, capabilities: &CapabilityReport) 
         CaptureKind::Gif,
         CaptureTarget::Area,
         Some(GIF_MAX_DURATION),
-        capabilities.gif_recording.available,
+        &capabilities.gif_recording,
         commands,
     ));
     actions
@@ -184,11 +185,11 @@ fn record_button(
     kind: CaptureKind,
     target: CaptureTarget,
     maximum_duration: Option<Duration>,
-    available: bool,
+    capability: &CapabilityStatus,
     commands: &Sender<AppCommand>,
 ) -> gtk::Button {
     let button = gtk::Button::with_label(label);
-    button.set_sensitive(available);
+    apply_capability(&button, capability);
     let commands = commands.clone();
     button.connect_clicked(move |_| {
         if let Ok(request) = RecordingRequest::new(kind, target, maximum_duration) {
@@ -196,6 +197,11 @@ fn record_button(
         }
     });
     button
+}
+
+fn apply_capability(button: &gtk::Button, capability: &CapabilityStatus) {
+    button.set_sensitive(capability.available);
+    button.set_tooltip_text((!capability.available).then_some(capability.detail.as_str()));
 }
 
 fn refresh(

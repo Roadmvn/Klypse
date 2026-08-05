@@ -9,6 +9,7 @@ use klypse_storage::{
     AppPaths, CaptureRecord, CaptureRepository, CaptureStore, DeleteMode, StorageError,
     open_database,
 };
+use libadwaita as adw;
 use uuid::Uuid;
 
 use crate::{
@@ -18,6 +19,7 @@ use crate::{
 
 const PAGE_SIZE: usize = 50;
 const THUMBNAIL_EDGE: u32 = 256;
+type PreviewWindowState = Rc<RefCell<Option<(adw::Window, gtk::Picture)>>>;
 
 pub fn build(events: async_channel::Receiver<GalleryEvent>) -> Result<gtk::Widget, StorageError> {
     let paths = AppPaths::discover()?;
@@ -47,6 +49,18 @@ pub fn build_with_paths(
     let gallery_label = gettext("Capture gallery");
     grid.set_tooltip_text(Some(&gallery_label));
     super::set_accessible_label(&grid, &gallery_label);
+    let preview_window = Rc::new(RefCell::new(None));
+    grid.connect_activate({
+        let model = model.clone();
+        let preview_window = Rc::clone(&preview_window);
+        move |grid, position| {
+            let Some(item) = model.item(position).and_downcast::<glib::BoxedAnyObject>() else {
+                return;
+            };
+            let record = item.borrow::<CaptureRecord>().clone();
+            present_capture_preview(grid, &record, &preview_window);
+        }
+    });
     let scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vexpand(true)
@@ -222,6 +236,56 @@ fn gallery_factory() -> gtk::SignalListItemFactory {
     factory
 }
 
+fn present_capture_preview(
+    grid: &gtk::GridView,
+    record: &CaptureRecord,
+    state: &PreviewWindowState,
+) {
+    let preview_path = match record.kind {
+        CaptureKind::Video => record.thumbnail_path.as_ref().or(Some(&record.path)),
+        CaptureKind::Screenshot | CaptureKind::Gif => Some(&record.path),
+    };
+    if let Some((window, picture)) = state.borrow().as_ref().cloned() {
+        picture.set_filename(preview_path);
+        window.present();
+        return;
+    }
+
+    let picture = gtk::Picture::builder()
+        .can_shrink(true)
+        .content_fit(gtk::ContentFit::Contain)
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+    picture.set_filename(preview_path);
+    let preview_label = gettext("Capture preview");
+    super::set_accessible_label(&picture, &preview_label);
+
+    let toolbar = adw::ToolbarView::new();
+    toolbar.add_top_bar(&adw::HeaderBar::new());
+    toolbar.set_content(Some(&picture));
+    let window = adw::Window::builder()
+        .title(preview_label)
+        .default_width(1_000)
+        .default_height(700)
+        .content(&toolbar)
+        .build();
+    if let Some(parent) = grid.root().and_downcast::<gtk::Window>() {
+        window.set_transient_for(Some(&parent));
+    }
+    window.connect_close_request({
+        let state = Rc::downgrade(state);
+        move |_| {
+            if let Some(state) = state.upgrade() {
+                state.borrow_mut().take();
+            }
+            glib::Propagation::Proceed
+        }
+    });
+    *state.borrow_mut() = Some((window.clone(), picture));
+    window.present();
+}
+
 fn detail_pane(
     selection: &gtk::SingleSelection,
     model: &gio::ListStore,
@@ -248,6 +312,7 @@ fn detail_pane(
         pane.append(button);
     }
 
+    sync_detail_actions(selection, &copy, &edit, &reveal, &remove, &delete);
     selection.connect_selected_item_notify({
         let copy = copy.clone();
         let edit = edit.clone();
@@ -255,13 +320,7 @@ fn detail_pane(
         let remove = remove.clone();
         let delete = delete.clone();
         move |selection| {
-            let record = selected_record(selection);
-            let selected = record.is_some();
-            copy.set_sensitive(selected);
-            reveal.set_sensitive(selected);
-            remove.set_sensitive(selected);
-            delete.set_sensitive(selected);
-            edit.set_sensitive(record.is_some_and(|record| record.kind == CaptureKind::Screenshot));
+            sync_detail_actions(selection, &copy, &edit, &reveal, &remove, &delete);
         }
     });
     copy.connect_clicked({
@@ -296,12 +355,14 @@ fn detail_pane(
                 let stack = stack.clone();
                 let paths = paths.clone();
                 move |exported: CaptureRecord| {
-                    if let Ok(page) = controller.borrow_mut().refresh() {
+                    let refreshed = controller.borrow_mut().refresh();
+                    if let Ok(page) = refreshed {
+                        let store = controller.borrow().store();
                         replace_records(&model, &page.items);
                         schedule_missing_thumbnails(
                             &page.items,
                             &paths,
-                            controller.borrow().store(),
+                            store,
                             &model,
                         );
                         update_empty_state(&stack, model.n_items());
@@ -335,13 +396,15 @@ fn detail_pane(
         let controller = Rc::clone(&controller);
         let stack = stack.clone();
         move |_| {
-            if let Some(record) = selected_record(&selection)
-                && controller
+            let deleted = selected_record(&selection).is_some_and(|record| {
+                controller
                     .borrow_mut()
                     .delete(&record.id, DeleteMode::GalleryOnly)
                     .is_ok()
-            {
-                replace_records(&model, controller.borrow().items());
+            });
+            if deleted {
+                let items = controller.borrow().items().to_vec();
+                replace_records(&model, &items);
                 update_empty_state(&stack, model.n_items());
             }
         }
@@ -352,18 +415,37 @@ fn detail_pane(
         let controller = Rc::clone(&controller);
         let stack = stack.clone();
         move |_| {
-            if let Some(record) = selected_record(&selection)
-                && controller
+            let deleted = selected_record(&selection).is_some_and(|record| {
+                controller
                     .borrow_mut()
                     .delete(&record.id, DeleteMode::GalleryAndFile)
                     .is_ok()
-            {
-                replace_records(&model, controller.borrow().items());
+            });
+            if deleted {
+                let items = controller.borrow().items().to_vec();
+                replace_records(&model, &items);
                 update_empty_state(&stack, model.n_items());
             }
         }
     });
     pane
+}
+
+fn sync_detail_actions(
+    selection: &gtk::SingleSelection,
+    copy: &gtk::Button,
+    edit: &gtk::Button,
+    reveal: &gtk::Button,
+    remove: &gtk::Button,
+    delete: &gtk::Button,
+) {
+    let record = selected_record(selection);
+    let selected = record.is_some();
+    copy.set_sensitive(selected);
+    reveal.set_sensitive(selected);
+    remove.set_sensitive(selected);
+    delete.set_sensitive(selected);
+    edit.set_sensitive(record.is_some_and(|record| record.kind == CaptureKind::Screenshot));
 }
 
 fn selected_record(selection: &gtk::SingleSelection) -> Option<CaptureRecord> {

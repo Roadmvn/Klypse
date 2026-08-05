@@ -1,5 +1,7 @@
+use std::{cell::RefCell, rc::Rc};
+
 use async_channel::Sender;
-use gtk::{Align, Orientation, prelude::*};
+use gtk::{Align, Orientation, glib, prelude::*};
 use klypse_domain::AppCommand;
 use klypse_platform::{CapabilityReport, CapabilityStatus};
 use libadwaita as adw;
@@ -7,13 +9,64 @@ use libadwaita::prelude::*;
 
 use crate::i18n::gettext;
 
-pub fn present(
+#[derive(Default)]
+struct UiNotifierState {
+    overlay: Option<glib::WeakRef<adw::ToastOverlay>>,
+    pending_error: Option<String>,
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct UiNotifier {
+    state: Rc<RefCell<UiNotifierState>>,
+}
+
+impl UiNotifier {
+    fn register(&self, overlay: &adw::ToastOverlay) {
+        let pending_error = {
+            let mut state = self.state.borrow_mut();
+            state.overlay = Some(overlay.downgrade());
+            state.pending_error.take()
+        };
+        if let Some(message) = pending_error {
+            add_error_toast(overlay, &message);
+        }
+    }
+
+    pub(crate) fn show_error(&self, message: impl Into<String>) {
+        let message = message.into();
+        let overlay = self
+            .state
+            .borrow()
+            .overlay
+            .as_ref()
+            .and_then(glib::WeakRef::upgrade);
+        if let Some(overlay) = overlay {
+            add_error_toast(&overlay, &message);
+        } else {
+            self.state.borrow_mut().pending_error = Some(message);
+        }
+    }
+}
+
+fn add_error_toast(overlay: &adw::ToastOverlay, message: &str) {
+    overlay.add_toast(
+        adw::Toast::builder()
+            .title(message)
+            .use_markup(false)
+            .priority(adw::ToastPriority::High)
+            .timeout(8)
+            .build(),
+    );
+}
+
+pub(crate) fn present(
     application: &adw::Application,
     sender: Sender<AppCommand>,
     gallery_events: async_channel::Receiver<crate::gallery::GalleryEvent>,
     gallery_event_sender: async_channel::Sender<crate::gallery::GalleryEvent>,
     recording: std::sync::Arc<std::sync::Mutex<super::recording::RecordingPresentation>>,
     recovery_scans: async_channel::Receiver<()>,
+    notifier: UiNotifier,
 ) {
     if let Some(window) = application.active_window() {
         window.present();
@@ -73,7 +126,10 @@ pub fn present(
     }
     content.append(&diagnostics(&capabilities));
     toolbar_view.set_content(Some(&content));
-    window.set_content(Some(&toolbar_view));
+    let toast_overlay = adw::ToastOverlay::new();
+    toast_overlay.set_child(Some(&toolbar_view));
+    notifier.register(&toast_overlay);
+    window.set_content(Some(&toast_overlay));
     window.present();
     super::recovery::monitor(&recovery_host, gallery_event_sender, sender, recovery_scans);
 }

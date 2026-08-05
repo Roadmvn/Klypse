@@ -268,6 +268,10 @@ impl EditorController {
         self.history.can_redo()
     }
 
+    pub fn can_delete_last_layer(&self) -> bool {
+        !self.document.layers.is_empty()
+    }
+
     pub fn is_dirty(&self) -> bool {
         self.document != self.saved_document
     }
