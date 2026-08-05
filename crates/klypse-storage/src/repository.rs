@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs, io,
     path::{Path, PathBuf},
     sync::{Mutex, MutexGuard},
@@ -17,6 +18,31 @@ pub trait CaptureStore: Send + Sync {
     fn list_page(&self, offset: usize, limit: usize) -> Result<Vec<CaptureRecord>, StorageError>;
     fn get(&self, id: &Uuid) -> Result<Option<CaptureRecord>, StorageError>;
     fn delete(&self, id: &Uuid, mode: DeleteMode) -> Result<(), StorageError>;
+    fn delete_many(&self, ids: &[Uuid], mode: DeleteMode) -> Result<usize, StorageError> {
+        let ids = unique_ids(ids);
+        for id in &ids {
+            if self.get(id)?.is_none() {
+                return Err(StorageError::CaptureNotFound(*id));
+            }
+        }
+        for id in &ids {
+            self.delete(id, mode)?;
+        }
+        Ok(ids.len())
+    }
+    fn delete_all(&self, mode: DeleteMode) -> Result<usize, StorageError> {
+        let mut ids = Vec::new();
+        loop {
+            let page = self.list_page(ids.len(), 200)?;
+            let finished = page.len() < 200;
+            ids.extend(page.into_iter().map(|record| record.id));
+            if finished {
+                break;
+            }
+        }
+
+        self.delete_many(&ids, mode)
+    }
     fn set_thumbnail(&self, id: &Uuid, path: &Path) -> Result<(), StorageError>;
     fn set_annotation(&self, id: &Uuid, annotation: Option<&str>) -> Result<(), StorageError>;
 
@@ -88,31 +114,29 @@ impl CaptureStore for CaptureRepository {
     }
 
     fn delete(&self, id: &Uuid, mode: DeleteMode) -> Result<(), StorageError> {
-        let mut connection = self.connection()?;
-        let record = get_record(&connection, id)?.ok_or(StorageError::CaptureNotFound(*id))?;
-        let transaction = connection.transaction()?;
-        transaction.execute("DELETE FROM captures WHERE id = ?1", [id.to_string()])?;
-        transaction.commit()?;
-
-        if mode == DeleteMode::GalleryOnly {
-            return Ok(());
-        }
-
-        let remove_result = record
-            .thumbnail_path
-            .as_deref()
-            .map(remove_if_present)
-            .transpose()
-            .and_then(|_| remove_if_present(&record.path));
-        if let Err(error) = remove_result {
-            if let Err(restore_error) = insert_record(&connection, &record.clone().into()) {
-                return Err(StorageError::Recovery(format!(
-                    "{error}; row restore also failed: {restore_error}"
-                )));
-            }
-            return Err(StorageError::Io(error));
-        }
+        self.delete_many(std::slice::from_ref(id), mode)?;
         Ok(())
+    }
+
+    fn delete_many(&self, ids: &[Uuid], mode: DeleteMode) -> Result<usize, StorageError> {
+        let ids = unique_ids(ids);
+        let mut connection = self.connection()?;
+        delete_records(&mut connection, &ids, mode)
+    }
+
+    fn delete_all(&self, mode: DeleteMode) -> Result<usize, StorageError> {
+        let mut connection = self.connection()?;
+        let ids = {
+            let mut statement =
+                connection.prepare("SELECT id FROM captures ORDER BY created_at DESC, id DESC")?;
+            statement
+                .query_map([], |row| {
+                    let id: String = row.get(0)?;
+                    parse_value(0, &id, Uuid::parse_str)
+                })?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        delete_records(&mut connection, &ids, mode)
     }
 
     fn set_thumbnail(&self, id: &Uuid, path: &Path) -> Result<(), StorageError> {
@@ -219,6 +243,88 @@ fn get_record(connection: &Connection, id: &Uuid) -> Result<Option<CaptureRecord
         .map(capture_from_row)
         .transpose()
         .map_err(Into::into)
+}
+
+fn unique_ids(ids: &[Uuid]) -> Vec<Uuid> {
+    let mut seen = HashSet::with_capacity(ids.len());
+    ids.iter().copied().filter(|id| seen.insert(*id)).collect()
+}
+
+fn delete_records(
+    connection: &mut Connection,
+    ids: &[Uuid],
+    mode: DeleteMode,
+) -> Result<usize, StorageError> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+
+    let transaction = connection.transaction()?;
+    let mut records = Vec::with_capacity(ids.len());
+    for id in ids {
+        records.push(get_record(&transaction, id)?.ok_or(StorageError::CaptureNotFound(*id))?);
+    }
+    {
+        let mut statement = transaction.prepare_cached("DELETE FROM captures WHERE id = ?1")?;
+        for id in ids {
+            statement.execute([id.to_string()])?;
+        }
+    }
+    transaction.commit()?;
+
+    if mode == DeleteMode::GalleryOnly {
+        for record in &records {
+            if let Some(thumbnail) = record.thumbnail_path.as_deref() {
+                let _ = remove_if_present(thumbnail);
+            }
+        }
+        return Ok(records.len());
+    }
+
+    remove_capture_files(connection, &records)?;
+    Ok(records.len())
+}
+
+fn remove_capture_files(
+    connection: &mut Connection,
+    records: &[CaptureRecord],
+) -> Result<(), StorageError> {
+    for (index, record) in records.iter().enumerate() {
+        if let Some(thumbnail) = record.thumbnail_path.as_deref()
+            && let Err(error) = remove_if_present(thumbnail)
+        {
+            restore_after_delete_error(connection, records[index..].to_vec(), &error)?;
+            return Err(StorageError::Io(error));
+        }
+
+        if let Err(error) = remove_if_present(&record.path) {
+            let mut pending = records[index..].to_vec();
+            pending[0].thumbnail_path = None;
+            restore_after_delete_error(connection, pending, &error)?;
+            return Err(StorageError::Io(error));
+        }
+    }
+    Ok(())
+}
+
+fn restore_after_delete_error(
+    connection: &mut Connection,
+    records: Vec<CaptureRecord>,
+    delete_error: &io::Error,
+) -> Result<(), StorageError> {
+    let transaction = connection.transaction()?;
+    for record in records {
+        if let Err(restore_error) = insert_record(&transaction, &record.into()) {
+            return Err(StorageError::Recovery(format!(
+                "{delete_error}; row restore also failed: {restore_error}"
+            )));
+        }
+    }
+    transaction.commit().map_err(|restore_error| {
+        StorageError::Recovery(format!(
+            "{delete_error}; row restore also failed: {restore_error}"
+        ))
+    })
 }
 
 fn capture_from_row(row: &Row<'_>) -> rusqlite::Result<CaptureRecord> {

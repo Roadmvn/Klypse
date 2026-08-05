@@ -78,6 +78,49 @@ impl GalleryController {
         Ok(self.page())
     }
 
+    pub fn delete_many(
+        &mut self,
+        ids: &[Uuid],
+        mode: DeleteMode,
+    ) -> Result<GalleryPage, StorageError> {
+        if let Err(error) = self.store.delete_many(ids, mode) {
+            let _ = self.load_initial();
+            return Err(error);
+        }
+        self.load_initial()
+    }
+
+    pub fn all_ids(&self) -> Result<Vec<Uuid>, StorageError> {
+        let mut ids = Vec::new();
+        let mut known_ids = HashSet::new();
+        let mut offset = 0_usize;
+        loop {
+            let records = self.store.list_page(offset, 200)?;
+            let record_count = records.len();
+            ids.extend(
+                records
+                    .into_iter()
+                    .map(|record| record.id)
+                    .filter(|id| known_ids.insert(*id)),
+            );
+            if record_count < 200 {
+                break;
+            }
+            offset = offset.checked_add(record_count).ok_or_else(|| {
+                StorageError::InvalidValue("gallery item offset is too large".into())
+            })?;
+        }
+        Ok(ids)
+    }
+
+    pub fn clear(&mut self, mode: DeleteMode) -> Result<GalleryPage, StorageError> {
+        if let Err(error) = self.store.delete_all(mode) {
+            let _ = self.load_initial();
+            return Err(error);
+        }
+        self.load_initial()
+    }
+
     pub fn items(&self) -> &[CaptureRecord] {
         &self.items
     }

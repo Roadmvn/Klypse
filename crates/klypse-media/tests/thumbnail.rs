@@ -1,4 +1,4 @@
-use image::{Rgba, RgbaImage};
+use image::{DynamicImage, Rgba, RgbaImage};
 use klypse_media::Thumbnailer;
 
 struct ImageFixture {
@@ -44,6 +44,38 @@ fn small_images_are_not_enlarged() {
         .unwrap();
 
     assert_eq!((info.width, info.height), (80, 40));
+}
+
+#[test]
+fn thumbnail_can_be_generated_atomically_from_an_image_in_memory() {
+    let directory = tempfile::tempdir().unwrap();
+    let destination = directory.path().join("thumb.png");
+    let image =
+        DynamicImage::ImageRgba8(RgbaImage::from_pixel(1_200, 600, Rgba([12, 34, 56, 255])));
+
+    let info = Thumbnailer::new(256)
+        .generate_from_image(image, &destination)
+        .unwrap();
+
+    assert_eq!((info.width, info.height), (256, 128));
+    assert_eq!(info.path, destination);
+    let generated = image::open(&destination).unwrap();
+    assert_eq!((generated.width(), generated.height()), (256, 128));
+}
+
+#[test]
+fn invalid_in_memory_thumbnail_request_keeps_an_existing_destination() {
+    let directory = tempfile::tempdir().unwrap();
+    let destination = directory.path().join("thumb.png");
+    std::fs::write(&destination, b"existing thumbnail").unwrap();
+    let image = DynamicImage::ImageRgba8(RgbaImage::new(80, 40));
+
+    assert!(
+        Thumbnailer::new(0)
+            .generate_from_image(image, &destination)
+            .is_err()
+    );
+    assert_eq!(std::fs::read(destination).unwrap(), b"existing thumbnail");
 }
 
 #[test]

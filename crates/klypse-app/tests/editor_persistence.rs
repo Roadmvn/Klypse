@@ -5,6 +5,7 @@ use image::{Rgba, RgbaImage};
 use klypse_app::editor::{EditorController, EditorTool};
 use klypse_domain::{CaptureKind, CaptureTarget, DisplayServer};
 use klypse_image::Point;
+use klypse_media::Thumbnailer;
 use klypse_storage::{
     AppPaths, CaptureRecord, CaptureRepository, CaptureStore, NewCaptureRecord, open_database,
 };
@@ -84,6 +85,78 @@ fn saved_annotations_reopen_without_touching_original() {
     assert_eq!(reopened.document().layers.len(), 1);
     assert!(!editor.is_dirty());
     assert_eq!(fs::read(&fixture.record.path).unwrap(), original);
+}
+
+#[test]
+fn visible_save_updates_the_same_record_thumbnail_without_touching_original() {
+    let fixture = Fixture::new();
+    let original = fs::read(&fixture.record.path).unwrap();
+    let previous_thumbnail = fixture.paths.thumbnails.join("previous.png");
+    Thumbnailer::new(256)
+        .generate(&fixture.record.path, &previous_thumbnail)
+        .unwrap();
+    fixture
+        .repository
+        .set_thumbnail(&fixture.record.id, &previous_thumbnail)
+        .unwrap();
+    let mut record = fixture.record.clone();
+    record.thumbnail_path = Some(previous_thumbnail.clone());
+    let mut editor = fixture.edited_controller();
+
+    let updated = editor
+        .save_visible(
+            &fixture.source,
+            &fixture.paths,
+            &fixture.repository,
+            &record,
+        )
+        .unwrap();
+    let stored = fixture.repository.get(&record.id).unwrap().unwrap();
+
+    assert_eq!(updated.id, record.id);
+    assert_eq!(stored, updated);
+    assert_eq!(fixture.repository.list_page(0, 50).unwrap().len(), 1);
+    assert_eq!(fs::read(&record.path).unwrap(), original);
+    assert!(!editor.is_dirty());
+    assert!(updated.annotation_json.is_some());
+    let thumbnail = updated.thumbnail_path.as_ref().unwrap();
+    assert_ne!(thumbnail, &previous_thumbnail);
+    assert!(thumbnail.exists());
+    assert!(!previous_thumbnail.exists());
+    let rendered_thumbnail = image::open(thumbnail).unwrap().to_rgba8();
+    assert!(
+        rendered_thumbnail
+            .pixels()
+            .any(|pixel| pixel.0 != [255, 255, 255, 255])
+    );
+
+    editor.set_tool(EditorTool::Line);
+    editor.pointer_down(Point::new(4.0, 20.0).unwrap()).unwrap();
+    editor.pointer_up(Point::new(30.0, 20.0).unwrap()).unwrap();
+    let saved_again = editor
+        .save_visible(
+            &fixture.source,
+            &fixture.paths,
+            &fixture.repository,
+            &record,
+        )
+        .unwrap();
+    let stored_again = fixture.repository.get(&record.id).unwrap().unwrap();
+
+    assert_eq!(stored_again, saved_again);
+    assert_ne!(saved_again.thumbnail_path, updated.thumbnail_path);
+    assert!(!thumbnail.exists());
+    assert_eq!(fixture.repository.list_page(0, 50).unwrap().len(), 1);
+    assert_eq!(
+        EditorController::open(&stored_again)
+            .unwrap()
+            .document()
+            .layers
+            .len(),
+        2
+    );
+    assert_eq!(fs::read(&record.path).unwrap(), original);
+    assert!(!editor.is_dirty());
 }
 
 #[test]

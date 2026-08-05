@@ -34,35 +34,205 @@ fn one_thousand_gallery_items_page_quickly_without_duplicates() {
 }
 
 #[test]
-fn virtualized_gallery_realizes_at_most_three_pages_of_cards() {
+fn gallery_ui_is_virtualized_and_inline_preview_navigates() {
     if gtk::init().is_err() {
         return;
     }
-    let fixture = Fixture::new(1_000);
-    let (_sender, receiver) = async_channel::unbounded();
-    let gallery = build_with_paths(receiver, fixture.paths.clone()).unwrap();
-    let window = gtk::Window::builder()
-        .default_width(1_000)
-        .default_height(700)
-        .child(&gallery)
-        .build();
-    window.present();
     let context = gtk::glib::MainContext::default();
-    for _ in 0..20 {
+
+    {
+        let fixture = Fixture::new(1_000);
+        let (_sender, receiver) = async_channel::unbounded();
+        let gallery = build_with_paths(receiver, fixture.paths.clone()).unwrap();
+        let window = gtk::Window::builder()
+            .default_width(1_000)
+            .default_height(700)
+            .child(&gallery)
+            .build();
+        window.present();
+        for _ in 0..20 {
+            while context.pending() {
+                context.iteration(false);
+            }
+        }
+
+        let realized = descendants(&gallery)
+            .into_iter()
+            .filter(|widget| widget.has_css_class("gallery-card"))
+            .count();
+        assert!(realized > 0);
+        assert!(realized <= 150, "realized {realized} gallery cards");
+        let copy = button_by_label(&gallery, "Copy");
+        let edit = button_by_label(&gallery, "Edit");
+        assert!(!copy.is_sensitive());
+        assert!(!edit.is_sensitive());
+        let grid = descendants(&gallery)
+            .into_iter()
+            .find_map(|widget| widget.downcast::<gtk::GridView>().ok())
+            .unwrap();
+        let stack = gallery.clone().downcast::<gtk::Stack>().unwrap();
+        let select = widget_by_name::<gtk::Button>(&gallery, "gallery-select");
+        let select_mode = widget_by_name::<gtk::Box>(&gallery, "gallery-select-mode");
+        let select_all = widget_by_name::<gtk::Button>(&gallery, "gallery-select-all");
+        let clear_selection = widget_by_name::<gtk::Button>(&gallery, "gallery-clear-selection");
+        let cancel_selection = widget_by_name::<gtk::Button>(&gallery, "gallery-cancel-selection");
+        let selection_counter = widget_by_name::<gtk::Label>(&gallery, "gallery-selection-count");
+        let delete_selected = widget_by_name::<gtk::Button>(&gallery, "gallery-delete-selected");
+        assert!(select.is_sensitive());
+        assert!(!select_mode.is_visible());
+        assert!(
+            descendants(&gallery)
+                .into_iter()
+                .filter_map(|widget| widget.downcast::<gtk::Button>().ok())
+                .all(|button| {
+                    !matches!(
+                        button.label().as_deref(),
+                        Some("Remove from Gallery" | "Delete from Disk")
+                    )
+                })
+        );
+
+        select.emit_clicked();
+        assert!(select_mode.is_visible());
+        assert_eq!(selection_counter.text(), "Selected captures: 0");
+        assert!(!delete_selected.is_sensitive());
+        grid.emit_by_name::<()>("activate", &[&0_u32]);
         while context.pending() {
             context.iteration(false);
         }
+        assert_eq!(stack.visible_child_name().as_deref(), Some("gallery"));
+        assert_eq!(selection_counter.text(), "Selected captures: 1");
+        assert!(delete_selected.is_sensitive());
+        let card_toggles = descendants(&gallery)
+            .into_iter()
+            .filter_map(|widget| widget.downcast::<gtk::CheckButton>().ok())
+            .filter(|toggle| toggle.is_visible())
+            .collect::<Vec<_>>();
+        assert!(!card_toggles.is_empty());
+        assert_eq!(
+            card_toggles
+                .iter()
+                .filter(|toggle| toggle.is_active())
+                .count(),
+            1
+        );
+        select_all.emit_clicked();
+        assert_eq!(selection_counter.text(), "Selected captures: 1000");
+        clear_selection.emit_clicked();
+        assert_eq!(selection_counter.text(), "Selected captures: 0");
+        assert!(!delete_selected.is_sensitive());
+        cancel_selection.emit_clicked();
+        assert!(!select_mode.is_visible());
+
+        let selection = grid.model().and_downcast::<gtk::SingleSelection>().unwrap();
+        assert!(!selection.is_autoselect());
+        assert!(selection.can_unselect());
+        assert_eq!(selection.selected(), gtk::INVALID_LIST_POSITION);
+
+        selection.set_selected(0);
+        assert!(copy.is_sensitive());
+        assert!(edit.is_sensitive());
+        let model = selection
+            .model()
+            .and_downcast::<gtk::gio::ListStore>()
+            .unwrap();
+        let first = model.item(0).unwrap();
+        model.remove_all();
+        model.append(&first);
+        assert_eq!(selection.selected(), gtk::INVALID_LIST_POSITION);
+        assert!(!copy.is_sensitive());
+        assert!(!edit.is_sensitive());
+        window.close();
     }
 
-    let realized = descendants(&gallery)
-        .into_iter()
-        .filter(|widget| widget.has_css_class("gallery-card"))
-        .count();
-    assert!(realized > 0);
-    assert!(realized <= 150, "realized {realized} gallery cards");
-    assert!(button_by_label(&gallery, "Copy").is_sensitive());
-    assert!(button_by_label(&gallery, "Edit").is_sensitive());
-    window.close();
+    {
+        let fixture = Fixture::new(0);
+        let (_sender, receiver) = async_channel::unbounded();
+        let gallery = build_with_paths(receiver, fixture.paths).unwrap();
+        assert!(!widget_by_name::<gtk::Button>(&gallery, "gallery-select").is_sensitive());
+    }
+
+    {
+        let fixture = Fixture::new(3);
+        let (_sender, receiver) = async_channel::unbounded();
+        let gallery = build_with_paths(receiver, fixture.paths.clone()).unwrap();
+        let stack = gallery.clone().downcast::<gtk::Stack>().unwrap();
+        let grid = descendants(&gallery)
+            .into_iter()
+            .find_map(|widget| widget.downcast::<gtk::GridView>().ok())
+            .unwrap();
+
+        grid.emit_by_name::<()>("activate", &[&0_u32]);
+
+        assert_eq!(stack.visible_child_name().as_deref(), Some("preview"));
+        assert_eq!(
+            descendants(&gallery)
+                .iter()
+                .filter(|widget| widget.widget_name() == "klypse-capture-preview")
+                .count(),
+            1
+        );
+        let previous = widget_by_name::<gtk::Button>(&gallery, "preview-previous");
+        let next = widget_by_name::<gtk::Button>(&gallery, "preview-next");
+        let counter = widget_by_name::<gtk::Label>(&gallery, "preview-counter");
+        let back = widget_by_name::<gtk::Button>(&gallery, "preview-back");
+        let close = widget_by_name::<gtk::Button>(&gallery, "preview-close");
+        let image = widget_by_name::<gtk::Button>(&gallery, "preview-image");
+        assert!(!previous.is_sensitive());
+        assert!(next.is_sensitive());
+        assert_eq!(counter.text(), "1 / 3");
+
+        next.emit_clicked();
+        assert!(previous.is_sensitive());
+        assert!(next.is_sensitive());
+        assert_eq!(counter.text(), "2 / 3");
+        next.emit_clicked();
+        assert!(previous.is_sensitive());
+        assert!(!next.is_sensitive());
+        assert_eq!(counter.text(), "3 / 3");
+
+        grid.emit_by_name::<()>("activate", &[&1_u32]);
+        assert_eq!(counter.text(), "2 / 3");
+        assert_eq!(
+            descendants(&gallery)
+                .iter()
+                .filter(|widget| widget.widget_name() == "klypse-capture-preview")
+                .count(),
+            1
+        );
+        back.emit_clicked();
+        assert_eq!(stack.visible_child_name().as_deref(), Some("gallery"));
+
+        grid.emit_by_name::<()>("activate", &[&1_u32]);
+        assert_eq!(stack.visible_child_name().as_deref(), Some("preview"));
+        close.emit_clicked();
+        assert_eq!(stack.visible_child_name().as_deref(), Some("gallery"));
+
+        grid.emit_by_name::<()>("activate", &[&1_u32]);
+        assert_eq!(stack.visible_child_name().as_deref(), Some("preview"));
+        image.emit_clicked();
+        assert_eq!(stack.visible_child_name().as_deref(), Some("gallery"));
+    }
+
+    {
+        let fixture = Fixture::new(51);
+        let (_sender, receiver) = async_channel::unbounded();
+        let gallery = build_with_paths(receiver, fixture.paths).unwrap();
+        let grid = descendants(&gallery)
+            .into_iter()
+            .find_map(|widget| widget.downcast::<gtk::GridView>().ok())
+            .unwrap();
+
+        grid.emit_by_name::<()>("activate", &[&49_u32]);
+        let next = widget_by_name::<gtk::Button>(&gallery, "preview-next");
+        let counter = widget_by_name::<gtk::Label>(&gallery, "preview-counter");
+        assert_eq!(counter.text(), "50 / 50+");
+
+        next.emit_clicked();
+
+        assert_eq!(counter.text(), "51 / 51");
+        assert!(!next.is_sensitive());
+    }
 }
 
 struct Fixture {
@@ -128,4 +298,15 @@ fn button_by_label(root: &impl IsA<gtk::Widget>, label: &str) -> gtk::Button {
         .filter_map(|widget| widget.downcast::<gtk::Button>().ok())
         .find(|button| button.label().as_deref() == Some(label))
         .unwrap_or_else(|| panic!("button {label:?} was not found"))
+}
+
+fn widget_by_name<T>(root: &impl IsA<gtk::Widget>, name: &str) -> T
+where
+    T: IsA<gtk::Widget> + gtk::glib::object::Cast,
+{
+    descendants(root)
+        .into_iter()
+        .find(|widget| widget.widget_name() == name)
+        .and_then(|widget| widget.downcast::<T>().ok())
+        .unwrap_or_else(|| panic!("widget {name:?} was not found"))
 }

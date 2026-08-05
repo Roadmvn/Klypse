@@ -73,9 +73,16 @@ fn pages_are_newest_first_and_stable() {
 }
 
 #[test]
-fn gallery_only_delete_keeps_the_file() {
+fn gallery_only_delete_keeps_the_capture_file_and_cleans_its_thumbnail() {
     let fixture = RepositoryFixture::new();
-    let record = fixture.insert_at(Uuid::new_v4(), "2026-01-01T00:00:00Z");
+    let mut record = fixture.insert_at(Uuid::new_v4(), "2026-01-01T00:00:00Z");
+    let thumbnail = fixture.paths.thumbnails.join("gallery-only-thumb.png");
+    fs::write(&thumbnail, b"thumbnail").unwrap();
+    fixture
+        .repository
+        .set_thumbnail(&record.id, &thumbnail)
+        .unwrap();
+    record.thumbnail_path = Some(thumbnail.clone());
 
     fixture
         .repository
@@ -83,6 +90,7 @@ fn gallery_only_delete_keeps_the_file() {
         .unwrap();
 
     assert!(record.path.exists());
+    assert!(!thumbnail.exists());
     assert!(fixture.repository.get(&record.id).unwrap().is_none());
 }
 
@@ -106,6 +114,156 @@ fn gallery_and_file_delete_removes_both_files() {
     assert!(!record.path.exists());
     assert!(!thumbnail.exists());
     assert!(fixture.repository.get(&record.id).unwrap().is_none());
+}
+
+#[test]
+fn delete_many_removes_only_the_requested_uuid_set() {
+    let fixture = RepositoryFixture::new();
+    for index in 0..80_u128 {
+        fixture.insert_at(Uuid::from_u128(index + 1), "2026-01-01T00:00:00Z");
+    }
+    let records = fixture.repository.list_page(0, 80).unwrap();
+    let selected = [records[1].id, records[49].id, records[74].id];
+    let unselected = [records[0].id, records[2].id, records[48].id, records[75].id];
+
+    let deleted = fixture
+        .repository
+        .delete_many(
+            &[selected[0], selected[1], selected[2], selected[1]],
+            DeleteMode::GalleryOnly,
+        )
+        .unwrap();
+
+    assert_eq!(deleted, selected.len());
+    for id in selected {
+        assert!(fixture.repository.get(&id).unwrap().is_none());
+    }
+    for id in unselected {
+        assert!(fixture.repository.get(&id).unwrap().is_some());
+    }
+}
+
+#[test]
+fn delete_many_validates_every_uuid_before_deleting_anything() {
+    let fixture = RepositoryFixture::new();
+    let first = fixture.insert_at(Uuid::from_u128(1), "2026-01-01T00:00:00Z");
+    let second = fixture.insert_at(Uuid::from_u128(2), "2026-01-01T00:00:00Z");
+    let missing = Uuid::from_u128(3);
+
+    let error = fixture
+        .repository
+        .delete_many(&[first.id, missing, second.id], DeleteMode::GalleryAndFile)
+        .unwrap_err();
+
+    assert!(matches!(error, klypse_storage::StorageError::CaptureNotFound(id) if id == missing));
+    assert!(fixture.repository.get(&first.id).unwrap().is_some());
+    assert!(fixture.repository.get(&second.id).unwrap().is_some());
+    assert!(first.path.exists());
+    assert!(second.path.exists());
+}
+
+#[test]
+fn failed_media_delete_restores_the_row_without_a_missing_thumbnail() {
+    let fixture = RepositoryFixture::new();
+    let id = Uuid::new_v4();
+    let media_directory = fixture.paths.captures.join("undeletable-as-file");
+    let thumbnail = fixture.paths.thumbnails.join("removed-before-failure.png");
+    fs::create_dir_all(&media_directory).unwrap();
+    fs::write(&thumbnail, b"thumbnail").unwrap();
+    fixture
+        .repository
+        .insert(NewCaptureRecord {
+            id,
+            kind: CaptureKind::Screenshot,
+            path: media_directory,
+            original_path: None,
+            thumbnail_path: Some(thumbnail.clone()),
+            created_at: "2026-01-01T00:00:00Z".parse().unwrap(),
+            width: 640,
+            height: 480,
+            duration: None,
+            file_size: 0,
+            target: CaptureTarget::Area,
+            backend: DisplayServer::X11,
+            annotation_json: None,
+        })
+        .unwrap();
+
+    assert!(
+        fixture
+            .repository
+            .delete(&id, DeleteMode::GalleryAndFile)
+            .is_err()
+    );
+
+    let restored = fixture.repository.get(&id).unwrap().unwrap();
+    assert!(restored.thumbnail_path.is_none());
+    assert!(!thumbnail.exists());
+}
+
+#[test]
+fn bulk_gallery_only_delete_keeps_every_file() {
+    let fixture = RepositoryFixture::new();
+    let records = (0..205)
+        .map(|index| fixture.insert_at(Uuid::from_u128(index + 1), "2026-01-01T00:00:00Z"))
+        .collect::<Vec<_>>();
+    let thumbnail = fixture.paths.thumbnails.join("bulk-gallery-thumb.png");
+    fs::write(&thumbnail, b"thumbnail").unwrap();
+    fixture
+        .repository
+        .set_thumbnail(&records[0].id, &thumbnail)
+        .unwrap();
+
+    let deleted = fixture
+        .repository
+        .delete_all(DeleteMode::GalleryOnly)
+        .unwrap();
+
+    assert_eq!(deleted, records.len());
+    assert!(fixture.repository.list_page(0, 200).unwrap().is_empty());
+    assert!(records.iter().all(|record| record.path.exists()));
+    assert!(!thumbnail.exists());
+}
+
+#[test]
+fn bulk_file_delete_removes_media_and_thumbnail_but_preserves_original_path() {
+    let fixture = RepositoryFixture::new();
+    let id = Uuid::new_v4();
+    let path = fixture.paths.captures.join(format!("{id}.png"));
+    let original = fixture.paths.captures.join("source-original.png");
+    let thumbnail = fixture.paths.thumbnails.join("bulk-thumb.png");
+    fs::write(&path, b"capture").unwrap();
+    fs::write(&original, b"original").unwrap();
+    fs::write(&thumbnail, b"thumbnail").unwrap();
+    let record = fixture
+        .repository
+        .insert(NewCaptureRecord {
+            id,
+            kind: CaptureKind::Screenshot,
+            path,
+            original_path: Some(original.clone()),
+            thumbnail_path: Some(thumbnail.clone()),
+            created_at: "2026-01-01T00:00:00Z".parse().unwrap(),
+            width: 640,
+            height: 480,
+            duration: None,
+            file_size: 7,
+            target: CaptureTarget::Area,
+            backend: DisplayServer::X11,
+            annotation_json: None,
+        })
+        .unwrap();
+
+    let deleted = fixture
+        .repository
+        .delete_all(DeleteMode::GalleryAndFile)
+        .unwrap();
+
+    assert_eq!(deleted, 1);
+    assert!(!record.path.exists());
+    assert!(!thumbnail.exists());
+    assert!(original.exists());
+    assert!(fixture.repository.list_page(0, 200).unwrap().is_empty());
 }
 
 #[test]

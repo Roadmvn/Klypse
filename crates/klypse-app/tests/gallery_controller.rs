@@ -89,6 +89,62 @@ fn refresh_and_delete_keep_controller_state_consistent() {
 }
 
 #[test]
+fn clear_removes_records_beyond_the_loaded_page() {
+    let fixture = GalleryFixture::with_records(205);
+    let mut controller = GalleryController::new(fixture.repository, 50).unwrap();
+    controller.load_initial().unwrap();
+    let store = controller.store();
+
+    let page = controller.clear(DeleteMode::GalleryOnly).unwrap();
+
+    assert!(page.items.is_empty());
+    assert!(!page.has_more);
+    assert!(store.list_page(0, 200).unwrap().is_empty());
+}
+
+#[test]
+fn all_ids_and_delete_many_cover_unloaded_items_without_deleting_neighbors() {
+    let fixture = GalleryFixture::with_records(205);
+    let mut controller = GalleryController::new(fixture.repository, 50).unwrap();
+    controller.load_initial().unwrap();
+    let initially_loaded = controller.items().len();
+    let selected = [
+        Uuid::from_u128(2),
+        Uuid::from_u128(75),
+        Uuid::from_u128(205),
+    ];
+    let unselected = [
+        Uuid::from_u128(1),
+        Uuid::from_u128(3),
+        Uuid::from_u128(74),
+        Uuid::from_u128(204),
+    ];
+
+    let all_ids = controller.all_ids().unwrap();
+
+    assert_eq!(all_ids.len(), 205);
+    assert_eq!(controller.items().len(), initially_loaded);
+    assert!(selected.iter().all(|id| all_ids.contains(id)));
+
+    let page = controller
+        .delete_many(
+            &[selected[0], selected[1], selected[2], selected[1]],
+            DeleteMode::GalleryOnly,
+        )
+        .unwrap();
+    let store = controller.store();
+
+    assert_eq!(page.items.len(), 50);
+    assert!(page.has_more);
+    for id in selected {
+        assert!(store.get(&id).unwrap().is_none());
+    }
+    for id in unselected {
+        assert!(store.get(&id).unwrap().is_some());
+    }
+}
+
+#[test]
 fn controller_rejects_invalid_page_sizes() {
     let fixture = GalleryFixture::with_records(0);
 

@@ -60,11 +60,131 @@ msgstr "Modifier"
 msgid "Reveal in Folder"
 msgstr "Afficher dans le dossier"
 
+msgid "Select"
+msgstr "Sélectionner"
+
+msgid "Selection"
+msgstr "Sélection"
+
+msgid "Select All"
+msgstr "Tout sélectionner"
+
+msgid "Clear Selection"
+msgstr "Effacer la sélection"
+
+msgid "Remove Selected from Gallery"
+msgstr "Retirer la sélection de la galerie"
+
+msgid "Keep the selected original files on disk"
+msgstr "Conserver les fichiers originaux sélectionnés sur le disque"
+
+msgid "Delete Selected from Disk"
+msgstr "Supprimer la sélection du disque"
+
+msgid "Permanently delete the selected capture files from disk"
+msgstr "Supprimer définitivement du disque les fichiers de capture sélectionnés"
+
+msgid "Selected captures"
+msgstr "Captures sélectionnées"
+
+msgid "Select capture"
+msgstr "Sélectionner la capture"
+
+msgid "Select Capture"
+msgstr "Sélectionner cette capture"
+
+msgid "Deselect Capture"
+msgstr "Désélectionner cette capture"
+
+msgid "Copy this capture"
+msgstr "Copier cette capture"
+
+msgid "Edit this screenshot"
+msgstr "Modifier cette capture d’écran"
+
+msgid "Reveal this capture in its folder"
+msgstr "Afficher cette capture dans son dossier"
+
+msgid "Remove this capture from the gallery"
+msgstr "Retirer cette capture de la galerie"
+
+msgid "Permanently delete this capture from disk"
+msgstr "Supprimer définitivement cette capture du disque"
+
+msgid "Capture actions"
+msgstr "Actions de la capture"
+
+msgid "Remove selected captures?"
+msgstr "Retirer les captures sélectionnées ?"
+
+msgid "Remove this capture?"
+msgstr "Retirer cette capture ?"
+
+msgid "This capture will be removed from Klypse, but the original file will stay on disk."
+msgstr "Cette capture sera retirée de Klypse, mais le fichier original restera sur le disque."
+
+msgid "The selected captures will be removed from Klypse, but the original files will stay on disk."
+msgstr "Les captures sélectionnées seront retirées de Klypse, mais les fichiers originaux resteront sur le disque."
+
+msgid "Delete selected files?"
+msgstr "Supprimer les fichiers sélectionnés ?"
+
+msgid "The selected capture files will be permanently deleted from disk."
+msgstr "Les fichiers de capture sélectionnés seront définitivement supprimés du disque."
+
 msgid "Remove from Gallery"
 msgstr "Retirer de la galerie"
 
-msgid "Delete File"
-msgstr "Supprimer le fichier"
+msgid "Remove This Capture from Gallery"
+msgstr "Retirer cette capture de la galerie"
+
+msgid "Delete from Disk"
+msgstr "Supprimer du disque"
+
+msgid "Delete This Capture from Disk"
+msgstr "Supprimer cette capture du disque"
+
+msgid "Keep the original file on disk; saved editor changes are removed from Klypse"
+msgstr "Conserve le fichier original sur le disque ; les modifications enregistrées dans l’éditeur sont retirées de Klypse"
+
+msgid "Permanently delete the capture file from disk"
+msgstr "Supprime définitivement le fichier de capture du disque"
+
+msgid "Clear Gallery…"
+msgstr "Vider la galerie…"
+
+msgid "Remove every capture from Klypse"
+msgstr "Retirer toutes les captures de Klypse"
+
+msgid "Delete this file?"
+msgstr "Supprimer ce fichier ?"
+
+msgid "Selected capture:"
+msgstr "Capture sélectionnée :"
+
+msgid "This permanently deletes the capture file from disk."
+msgstr "Cette action supprime définitivement le fichier de capture du disque."
+
+msgid "Clear the gallery?"
+msgstr "Vider la galerie ?"
+
+msgid "Keeping files preserves the original captures on disk, but saved editor changes will no longer be available. Deleting all files permanently removes the listed captures from disk."
+msgstr "Conserver les fichiers préserve les captures originales sur le disque, mais les modifications enregistrées dans l’éditeur ne seront plus disponibles. Supprimer tous les fichiers efface définitivement du disque les captures affichées."
+
+msgid "Keep Files"
+msgstr "Conserver les fichiers"
+
+msgid "Delete All Files"
+msgstr "Supprimer tous les fichiers"
+
+msgid "The gallery operation could not be completed"
+msgstr "L’opération sur la galerie n’a pas pu être terminée"
+
+msgid "Gallery could not be updated"
+msgstr "Impossible de mettre à jour la galerie"
+
+msgid "Close"
+msgstr "Fermer"
 
 msgid "Unable to open the capture library"
 msgstr "Impossible d’ouvrir la bibliothèque de captures"
@@ -159,6 +279,21 @@ msgstr "Supprimer la dernière annotation"
 msgid "Capture preview"
 msgstr "Aperçu de la capture"
 
+msgid "Capture preview — click to return to the gallery"
+msgstr "Aperçu de la capture — cliquez pour revenir à la galerie"
+
+msgid "Previous capture"
+msgstr "Capture précédente"
+
+msgid "Next capture"
+msgstr "Capture suivante"
+
+msgid "Back to Gallery"
+msgstr "Retour à la galerie"
+
+msgid "Close the capture preview"
+msgstr "Fermer l’aperçu de la capture"
+
 msgid "Zoom out"
 msgstr "Réduire le zoom"
 
@@ -209,6 +344,12 @@ msgstr "Saisissez du texte puis appuyez sur Entrée"
 
 msgid "Edit screenshot"
 msgstr "Modifier la capture d’écran"
+
+msgid "Changes saved"
+msgstr "Modifications enregistrées"
+
+msgid "Changes could not be saved"
+msgstr "Impossible d’enregistrer les modifications"
 
 msgid "Save your changes?"
 msgstr "Enregistrer vos modifications ?"

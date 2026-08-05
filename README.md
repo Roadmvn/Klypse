@@ -68,6 +68,12 @@ On X11, Klypse uses its direct capture backend and selection overlay. On Wayland
 
 The editor supports rectangle, ellipse, line, arrow, text, freehand, crop, pixelation, and blur tools, plus undo/redo, zoom, non-destructive save, flattened export, and clipboard copy.
 
+### Gallery actions
+
+Right-click a capture to select it, copy or edit it, reveal its folder, remove it from the gallery, or delete it from disk. Destructive actions always require confirmation.
+
+![Klypse gallery context menu](docs/images/klypse-gallery-context-menu.png)
+
 For a Flatpak installation, replace `klypse` in the examples with `flatpak run io.github.roadmvn.Klypse --`.
 
 ## Local data and privacy

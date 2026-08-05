@@ -51,9 +51,7 @@ impl Thumbnailer {
         source: impl AsRef<Path>,
         destination: impl AsRef<Path>,
     ) -> Result<ThumbnailInfo, MediaError> {
-        if self.max_edge == 0 {
-            return Err(MediaError::InvalidMaximumEdge);
-        }
+        self.validate()?;
         let source = source.as_ref();
         let destination = destination.as_ref();
         let image = match source
@@ -67,6 +65,22 @@ impl Thumbnailer {
             _ => return Err(MediaError::UnsupportedSource(source.to_path_buf())),
         };
         self.write_resized(image, destination)
+    }
+
+    pub fn generate_from_image(
+        &self,
+        image: DynamicImage,
+        destination: impl AsRef<Path>,
+    ) -> Result<ThumbnailInfo, MediaError> {
+        self.validate()?;
+        self.write_resized(image, destination.as_ref())
+    }
+
+    fn validate(&self) -> Result<(), MediaError> {
+        if self.max_edge == 0 {
+            return Err(MediaError::InvalidMaximumEdge);
+        }
+        Ok(())
     }
 
     fn write_resized(

@@ -7,7 +7,7 @@ use klypse_platform::{CapabilityReport, CapabilityStatus};
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use crate::{APP_ID, i18n::gettext};
+use crate::i18n::gettext;
 
 #[derive(Default)]
 struct UiNotifierState {
@@ -81,14 +81,11 @@ pub(crate) fn present(
         .build();
     let toolbar_view = adw::ToolbarView::new();
     let header = adw::HeaderBar::new();
-    let app_icon = gtk::Image::builder()
-        .icon_name(APP_ID)
-        .pixel_size(24)
-        .tooltip_text(gettext("Klypse"))
-        .margin_start(4)
-        .margin_end(4)
-        .build();
-    header.pack_start(&app_icon);
+    header.set_show_title(false);
+    let title = gtk::Label::new(Some(&gettext("Klypse")));
+    title.add_css_class("heading");
+    title.set_margin_start(6);
+    header.pack_start(&title);
     let preferences = gtk::Button::builder()
         .icon_name("preferences-system-symbolic")
         .tooltip_text(gettext("Preferences"))

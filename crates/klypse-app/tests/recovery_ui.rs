@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use gtk::prelude::*;
 use klypse_app::ui::recovery::build;
@@ -38,14 +38,35 @@ fn recovery_panel_exposes_explicit_actions_for_invalid_files() {
         .into_iter()
         .map(|label| label.text().to_string())
         .collect::<Vec<_>>();
-    let buttons = descendants::<gtk::Button>(&panel)
-        .into_iter()
+    let buttons = descendants::<gtk::Button>(&panel);
+    let button_labels = buttons
+        .iter()
         .filter_map(|button| button.label().map(|label| label.to_string()))
         .collect::<Vec<_>>();
 
     assert!(labels.iter().any(|label| label == "Recovery needed"));
     assert!(labels.iter().any(|label| label.contains("broken.gif")));
-    assert!(buttons.iter().any(|label| label == "Discard"));
+    assert!(button_labels.iter().any(|label| label == "Discard"));
+
+    let host = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    host.append(&panel);
+    buttons
+        .into_iter()
+        .find(|button| button.label().as_deref() == Some("Discard"))
+        .unwrap()
+        .emit_clicked();
+    let context = gtk::glib::MainContext::default();
+    for _ in 0..100 {
+        while context.pending() {
+            context.iteration(false);
+        }
+        if host.first_child().is_none() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    assert!(host.first_child().is_none());
 }
 
 struct Fixture {

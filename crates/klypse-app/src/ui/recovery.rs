@@ -179,7 +179,7 @@ fn recoverable_row(
                 match gio::spawn_blocking(move || reconciler.restore(&candidate)).await {
                     Ok(Ok(record)) => {
                         let _ = gallery_events.try_send(GalleryEvent::Select(record.id));
-                        row.unparent();
+                        dismiss_recovery_row(&row);
                         show_status(&status, &gettext("Capture restored"), false);
                         let _ = commands.try_send(AppCommand::CompleteRecordingRecovery);
                     }
@@ -211,7 +211,7 @@ fn recoverable_row(
             glib::spawn_future_local(async move {
                 match gio::spawn_blocking(move || reconciler.discard(&candidate)).await {
                     Ok(Ok(())) => {
-                        row.unparent();
+                        dismiss_recovery_row(&row);
                         let _ = commands.try_send(AppCommand::CompleteRecordingRecovery);
                     }
                     Ok(Err(error)) => {
@@ -258,7 +258,7 @@ fn invalid_row(
             glib::spawn_future_local(async move {
                 match gio::spawn_blocking(move || reconciler.discard_path(&path)).await {
                     Ok(Ok(())) => {
-                        row.unparent();
+                        dismiss_recovery_row(&row);
                         let _ = commands.try_send(AppCommand::CompleteRecordingRecovery);
                     }
                     Ok(Err(error)) => {
@@ -317,7 +317,7 @@ fn missing_row(
                 match gio::spawn_blocking(move || reconciler.relocate_missing(&id, &path)).await {
                     Ok(Ok(record)) => {
                         let _ = gallery_events.try_send(GalleryEvent::Select(record.id));
-                        row.unparent();
+                        dismiss_recovery_row(&row);
                         show_status(&status, &gettext("Capture location updated"), false);
                     }
                     Ok(Err(error)) => {
@@ -348,7 +348,7 @@ fn missing_row(
                 {
                     Ok(Ok(())) => {
                         let _ = gallery_events.try_send(GalleryEvent::Refresh);
-                        row.unparent();
+                        dismiss_recovery_row(&row);
                     }
                     Ok(Err(error)) => {
                         show_status(&status, &error.to_string(), true);
@@ -391,7 +391,7 @@ fn stale_thumbnail_row(
                 match gio::spawn_blocking(move || reconciler.discard_stale_thumbnail(&thumbnail))
                     .await
                 {
-                    Ok(Ok(())) => row.unparent(),
+                    Ok(Ok(())) => dismiss_recovery_row(&row),
                     Ok(Err(error)) => {
                         show_status(&status, &error.to_string(), true);
                         button.set_sensitive(true);
@@ -412,6 +412,7 @@ fn action_row(label: &str) -> gtk::Box {
         .orientation(gtk::Orientation::Horizontal)
         .spacing(6)
         .build();
+    row.add_css_class("recovery-action-row");
     let label = gtk::Label::builder()
         .label(label)
         .xalign(0.0)
@@ -420,6 +421,27 @@ fn action_row(label: &str) -> gtk::Box {
         .build();
     row.append(&label);
     row
+}
+
+fn dismiss_recovery_row(row: &gtk::Box) {
+    let panel = row.parent().and_downcast::<gtk::Box>();
+    row.unparent();
+    let Some(panel) = panel else {
+        return;
+    };
+
+    let mut child = panel.first_child();
+    while let Some(current) = child {
+        if current.has_css_class("recovery-action-row") {
+            return;
+        }
+        child = current.next_sibling();
+    }
+
+    panel.set_visible(false);
+    if panel.parent().is_some() {
+        panel.unparent();
+    }
 }
 
 fn safe_name(path: &Path) -> String {

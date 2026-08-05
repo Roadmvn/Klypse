@@ -21,7 +21,7 @@ const ZOOM_STEP: f64 = 1.25;
 
 type SaveAction = Rc<dyn Fn(&mut EditorController) -> Result<(), EditorError>>;
 type ExportAction = Rc<dyn Fn(&EditorController, &[u8]) -> Result<(), EditorError>>;
-pub type ExportCallback = Rc<dyn Fn(CaptureRecord)>;
+pub type RecordChangedCallback = Rc<dyn Fn(CaptureRecord)>;
 
 #[derive(Clone)]
 struct EditorActions {
@@ -51,7 +51,7 @@ impl EditorView {
     pub fn new(controller: EditorController, source: Vec<u8>) -> Result<Self, EditorViewError> {
         Self::new_with_actions(
             controller,
-            source,
+            Rc::new(source),
             EditorActions {
                 save: Rc::new(|controller| {
                     controller.mark_saved();
@@ -64,11 +64,10 @@ impl EditorView {
 
     fn new_with_actions(
         controller: EditorController,
-        source: Vec<u8>,
+        source: Rc<Vec<u8>>,
         actions: EditorActions,
     ) -> Result<Self, EditorViewError> {
         let controller = Rc::new(RefCell::new(controller));
-        let source = Rc::new(source);
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(6)
@@ -508,44 +507,74 @@ pub fn present(
     record: CaptureRecord,
     store: Arc<dyn CaptureStore>,
     paths: AppPaths,
-    on_export: ExportCallback,
+    on_changed: RecordChangedCallback,
 ) -> Result<(), EditorViewError> {
-    let source = fs::read(&record.path)?;
+    let source = Rc::new(fs::read(&record.path)?);
     let controller = match EditorController::open(&record) {
         Ok(controller) => controller,
         Err(EditorError::Storage(StorageError::CorruptAnnotation { reason, .. })) => {
-            present_corrupt_annotation(record, store, paths, on_export, reason);
+            present_corrupt_annotation(record, store, paths, on_changed, reason);
             return Ok(());
         }
         Err(error) => return Err(error.into()),
     };
+    let notifications = adw::ToastOverlay::new();
     let actions = EditorActions {
         save: {
             let store = Arc::clone(&store);
-            let id = record.id;
-            Rc::new(move |controller| controller.save(store.as_ref(), &id))
+            let paths = paths.clone();
+            let record = record.clone();
+            let source = Rc::clone(&source);
+            let on_changed = Rc::clone(&on_changed);
+            let notifications = notifications.downgrade();
+            Rc::new(move |controller| {
+                let saved = match controller.save_visible(
+                    source.as_slice(),
+                    &paths,
+                    store.as_ref(),
+                    &record,
+                ) {
+                    Ok(saved) => saved,
+                    Err(error) => {
+                        if let Some(notifications) = notifications.upgrade() {
+                            notifications
+                                .add_toast(adw::Toast::new(&gettext("Changes could not be saved")));
+                        }
+                        return Err(error);
+                    }
+                };
+                on_changed(saved);
+                if let Some(notifications) = notifications.upgrade() {
+                    notifications.add_toast(adw::Toast::new(&gettext("Changes saved")));
+                }
+                Ok(())
+            })
         },
         export: {
             let store = Arc::clone(&store);
             let paths = paths.clone();
             let record = record.clone();
-            let on_export = Rc::clone(&on_export);
+            let on_changed = Rc::clone(&on_changed);
             Some(Rc::new(
                 move |controller: &EditorController, source: &[u8]| {
                     let exported =
                         controller.export_flattened(source, &paths, store.as_ref(), &record)?;
-                    on_export(exported);
+                    on_changed(exported);
                     Ok(())
                 },
             ))
         },
     };
     let view = EditorView::new_with_actions(controller, source, actions)?;
+    notifications.set_child(Some(view.root()));
+    let toolbar = adw::ToolbarView::new();
+    toolbar.add_top_bar(&adw::HeaderBar::new());
+    toolbar.set_content(Some(&notifications));
     let window = adw::Window::builder()
         .title(gettext("Edit screenshot"))
         .default_width(1100)
         .default_height(760)
-        .content(view.root())
+        .content(&toolbar)
         .build();
     let controller = view.controller();
     let save_action = Rc::clone(&view.save_action);
@@ -605,7 +634,7 @@ fn present_corrupt_annotation(
     mut record: CaptureRecord,
     store: Arc<dyn CaptureStore>,
     paths: AppPaths,
-    on_export: ExportCallback,
+    on_changed: RecordChangedCallback,
     reason: String,
 ) {
     let dialog = adw::MessageDialog::new(
@@ -627,7 +656,7 @@ fn present_corrupt_annotation(
             match store.set_annotation(&record.id, None) {
                 Ok(()) => {
                     record.annotation_json = None;
-                    if let Err(error) = present(record, store, paths, on_export) {
+                    if let Err(error) = present(record, store, paths, on_changed) {
                         tracing::warn!(%error, "capture editor could not be reopened");
                     }
                 }

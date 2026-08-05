@@ -7,7 +7,7 @@ use klypse_image::{
     AnnotationDocument, DocumentCommand, EditHistory, ImageError, Layer, LayerKind, Point, Rect,
     RedactionMode, Renderer, Rgba, Stroke, ViewportTransform,
 };
-use klypse_media::Thumbnailer;
+use klypse_media::{MediaError, Thumbnailer};
 use klypse_storage::{
     AppPaths, AtomicCaptureFile, CaptureRecord, CaptureStore, NewCaptureRecord, StorageError,
 };
@@ -31,6 +31,8 @@ pub enum EditorError {
     Serialization(String),
     #[error("PNG export failed: {0}")]
     Export(String),
+    #[error("thumbnail generation failed: {0}")]
+    Thumbnail(#[from] MediaError),
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -291,6 +293,50 @@ impl EditorController {
         store.set_annotation(capture_id, Some(&annotation))?;
         self.mark_saved();
         Ok(())
+    }
+
+    pub fn save_visible(
+        &mut self,
+        source: &[u8],
+        paths: &AppPaths,
+        store: &(impl CaptureStore + ?Sized),
+        record: &CaptureRecord,
+    ) -> Result<CaptureRecord, EditorError> {
+        self.document.validate()?;
+        let current = store
+            .get(&record.id)?
+            .ok_or(StorageError::CaptureNotFound(record.id))?;
+        let annotation = serde_json::to_string(&self.document)
+            .map_err(|error| EditorError::Serialization(error.to_string()))?;
+        let rendered = Renderer::default().render_to_rgba(source, &self.document)?;
+        let thumbnail = paths
+            .thumbnails
+            .join(format!("{}-{}.png", record.id, Uuid::new_v4()));
+        Thumbnailer::new(THUMBNAIL_EDGE)
+            .generate_from_image(DynamicImage::ImageRgba8(rendered), &thumbnail)?;
+
+        if let Err(error) = store.set_annotation(&record.id, Some(&annotation)) {
+            let _ = fs::remove_file(&thumbnail);
+            return Err(error.into());
+        }
+        if let Err(error) = store.set_thumbnail(&record.id, &thumbnail) {
+            let _ = store.set_annotation(&record.id, current.annotation_json.as_deref());
+            let _ = fs::remove_file(&thumbnail);
+            return Err(error.into());
+        }
+
+        if let Some(previous) = current.thumbnail_path.as_deref()
+            && previous != thumbnail
+            && previous.parent() == Some(paths.thumbnails.as_path())
+        {
+            let _ = fs::remove_file(previous);
+        }
+
+        self.mark_saved();
+        let mut updated = current;
+        updated.annotation_json = Some(annotation);
+        updated.thumbnail_path = Some(thumbnail);
+        Ok(updated)
     }
 
     pub fn reset_annotations(
