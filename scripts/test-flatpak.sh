@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export LC_ALL=C
 
 app_id="io.github.roadmvn.Klypse"
 info="$(mktemp)"

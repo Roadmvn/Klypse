@@ -96,6 +96,10 @@ flatpak uninstall --user io.github.roadmvn.Klypse
 
 Package removal intentionally preserves captures and native user data. `flatpak uninstall --delete-data` removes Flatpak-private database/cache state, but files saved in `~/Pictures/Klypse` remain user-owned and must be removed manually if desired.
 
+## Development transparency
+
+Klypse has been developed with assistance from automated coding tools, including OpenAI Codex. Tool-assisted work can include implementation, refactoring, tests, documentation, and review support. The project maintainer remains responsible for reviewing, accepting, and releasing every change. Automated checks improve confidence but do not replace independent security review or real-desktop testing.
+
 ## Develop and verify
 
 On Debian-compatible systems, `./scripts/bootstrap-debian.sh` installs prerequisites when passwordless sudo is available, or prepares the development container when Docker is available.
@@ -105,7 +109,7 @@ Build packages locally:
 ```bash
 ./scripts/build-debian-package.sh
 ./scripts/dev-container.sh bash scripts/test-debian-package.sh \
-  build/debian/klypse_0.1.0-1_amd64.deb
+  build/debian/klypse_*_amd64.deb
 bash scripts/build-flatpak.sh
 bash scripts/test-flatpak.sh
 ```

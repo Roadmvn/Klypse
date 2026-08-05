@@ -32,8 +32,11 @@ dpkg-deb --extract "$deb" "$temporary/root"
 test -x "$temporary/root/usr/bin/klypse"
 "$temporary/root/usr/bin/klypse" --help >"$temporary/help" 2>&1
 "$temporary/root/usr/bin/klypse" --version >"$temporary/version" 2>&1
+package_version="$(dpkg-deb --field "$deb" Version)"
+package_version="${package_version#*:}"
+package_version="${package_version%%-*}"
 grep -Fq 'capture' "$temporary/help"
-grep -Fq 'klypse 0.1.0' "$temporary/version"
+grep -Fxq "klypse $package_version" "$temporary/version"
 desktop-file-validate \
   "$temporary/root/usr/share/applications/io.github.roadmvn.Klypse.desktop"
 appstreamcli validate --no-net \

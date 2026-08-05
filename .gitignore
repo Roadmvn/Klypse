@@ -1,5 +1,3 @@
-/*.png
-/.playwright-mcp/
 /.flatpak-builder/
 /.worktrees/
 /build/
@@ -7,5 +5,3 @@
 /tmp/
 *.log
 *.bak
-*_v2*
-*_new*
