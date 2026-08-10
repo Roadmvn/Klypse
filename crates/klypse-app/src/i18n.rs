@@ -24,7 +24,13 @@ enum TranslationMode {
 static TRANSLATIONS: OnceLock<TranslationMode> = OnceLock::new();
 
 pub fn init(language: Option<&str>) -> Result<(), Box<dyn Error>> {
-    setlocale(LocaleCategory::LcAll, "");
+    // SAFETY: setlocale reaches into the process environment without any
+    // synchronization. This runs at the top of main, before the GTK loop and
+    // any worker thread exist, so no other thread can observe the environment
+    // while the locale is installed.
+    unsafe {
+        setlocale(LocaleCategory::LcAll, "");
+    }
     let locale_directory = locale_directory();
     bindtextdomain(DOMAIN, &locale_directory)?;
     bind_textdomain_codeset(DOMAIN, "UTF-8")?;
