@@ -1,6 +1,9 @@
 use chrono::Utc;
 use gtk::gdk::prelude::*;
-use klypse_app::desktop::{clipboard::capture_content_provider, notification::notification_body};
+use klypse_app::desktop::{
+    clipboard::{capture_content_provider, image_provider},
+    notification::notification_body,
+};
 use klypse_domain::{CaptureKind, CaptureTarget, DisplayServer};
 use klypse_storage::CaptureRecord;
 use uuid::Uuid;
@@ -66,6 +69,20 @@ fn content_providers_offer_formats_for_their_capture_kind() {
     let formats = provider.formats();
     assert!(formats.contain_mime_type("text/uri-list"));
     assert!(!formats.contain_mime_type("image/png"));
+}
+
+#[test]
+fn clipboard_offers_the_picture_without_advertising_the_file() {
+    if gtk::init().is_err() {
+        return;
+    }
+    let screenshot = CaptureFixture::screenshot();
+
+    let formats = image_provider(&screenshot.record.path).unwrap().formats();
+    assert!(formats.contain_mime_type("image/png"));
+    // Chromium based browsers discard every image format as soon as a file is
+    // advertised, which leaves nothing to paste into a page.
+    assert!(!formats.contain_mime_type("text/uri-list"));
 }
 
 #[test]
