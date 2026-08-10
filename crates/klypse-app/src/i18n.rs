@@ -23,14 +23,22 @@ enum TranslationMode {
 
 static TRANSLATIONS: OnceLock<TranslationMode> = OnceLock::new();
 
-pub fn init(language: Option<&str>) -> Result<(), Box<dyn Error>> {
-    // SAFETY: setlocale reaches into the process environment without any
-    // synchronization. This runs at the top of main, before the GTK loop and
-    // any worker thread exist, so no other thread can observe the environment
-    // while the locale is installed.
+/// Installs the process locale.
+///
+/// Must be the very first thing `main` does. `setlocale` reaches into the
+/// process environment without any synchronization, so it is only sound while
+/// the process is still single threaded. Anything touching GIO spawns worker
+/// threads, which is why this cannot live in [`init`].
+pub fn init_locale() {
+    // SAFETY: called as the first statement of main, before the argument
+    // parser, the settings backend and the GTK loop. No other thread exists
+    // yet, so none can read the environment while the locale is installed.
     unsafe {
         setlocale(LocaleCategory::LcAll, "");
     }
+}
+
+pub fn init(language: Option<&str>) -> Result<(), Box<dyn Error>> {
     let locale_directory = locale_directory();
     bindtextdomain(DOMAIN, &locale_directory)?;
     bind_textdomain_codeset(DOMAIN, "UTF-8")?;

@@ -1,4 +1,8 @@
 fn main() {
+    // Has to happen while the process is still single threaded: the settings
+    // backend below pulls in GIO, which immediately spawns workers.
+    klypse_app::i18n::init_locale();
+
     if let Err(error) = klypse_app::cli::parse_from(std::env::args_os()) {
         let exit_code = error.exit_code();
         let _ = error.print();
