@@ -24,7 +24,7 @@ chrono = { version = "0.4.45", features = ["serde"] }
 cairo-rs = "0.22.0"
 clap = { version = "4", features = ["derive"] }
 directories = "6.0.0"
-gettext-rs = { version = "0.7.7", features = ["gettext-system"] }
+gettext-rs = { version = "0.8.0", features = ["gettext-system"] }
 futures-lite = "2.6.1"
 global-hotkey = "0.8.0"
 gstreamer = "0.25.3"
