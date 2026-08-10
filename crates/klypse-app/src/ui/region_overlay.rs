@@ -71,6 +71,32 @@ pub fn to_root_coordinates(selection: Rect, placement: OverlayPlacement) -> Rect
     }
 }
 
+/// How long the selector may stay on screen before it gives up on its own.
+/// Generous on purpose: picking a region is a deliberate act and people do
+/// pause mid-drag.
+const OVERLAY_DEADLINE_SECONDS: u32 = 300;
+
+/// Answers the pending capture exactly once, whatever happens to the overlay.
+///
+/// The selector used to reply only from a handful of GTK callbacks. Any path
+/// they did not cover - a cancelled gesture, a click without a drag, a window
+/// hidden by the session - left the capture waiting forever, and because the
+/// senders outlive the wait the channel could never close by itself. Dropping
+/// this guard is now enough to release the caller.
+struct Answer(async_channel::Sender<Option<Rect>>);
+
+impl Answer {
+    fn send(&self, selection: Option<Rect>) {
+        let _ = self.0.try_send(selection);
+    }
+}
+
+impl Drop for Answer {
+    fn drop(&mut self) {
+        let _ = self.0.try_send(None);
+    }
+}
+
 pub struct RegionOverlay;
 
 impl RegionOverlay {
@@ -83,6 +109,7 @@ impl RegionOverlay {
         let state = Rc::new(RefCell::new(RegionSelectionState::default()));
         let placement = Rc::new(RefCell::new(OverlayPlacement::default()));
         let (sender, receiver) = async_channel::bounded(1);
+        let answer = Rc::new(Answer(sender));
         let window = gtk::Window::builder()
             .title(gettext("Klypse region selector"))
             .decorated(false)
@@ -90,10 +117,10 @@ impl RegionOverlay {
             .build();
         let overlay = gtk::Overlay::new();
         let picture = gtk::Picture::for_filename(snapshot);
-        picture.set_can_shrink(false);
         // The snapshot covers every monitor. Holding it in a fixed container
-        // keeps it at its natural size so one screen pixel stays one image
-        // pixel, and lets us slide the hosting monitor under the window.
+        // lets us slide the hosting monitor under the window; its size is set
+        // from the monitor scale on map so one image pixel stays one screen
+        // pixel.
         let stage = gtk::Fixed::new();
         stage.put(&picture, 0.0, 0.0);
         overlay.set_child(Some(&stage));
@@ -133,18 +160,29 @@ impl RegionOverlay {
                     draw_hint(context, width, height, &selector_label);
                     return;
                 };
+                // Everything below is drawn strictly OUTSIDE the selection.
+                // The picture is grabbed from the screen right after the
+                // overlay is dismissed, and on a compositing desktop it may
+                // still be on screen at that moment: anything painted inside
+                // the rectangle would end up baked into the file.
+                let x = f64::from(rect.x);
+                let y = f64::from(rect.y);
+                let w = f64::from(rect.width);
+                let h = f64::from(rect.height);
                 context.set_source_rgb(1.0, 1.0, 1.0);
                 context.set_line_width(2.0);
-                context.rectangle(
-                    f64::from(rect.x),
-                    f64::from(rect.y),
-                    f64::from(rect.width),
-                    f64::from(rect.height),
-                );
+                context.rectangle(x - 2.0, y - 2.0, w + 4.0, h + 4.0);
                 let _ = context.stroke();
-                context.move_to(f64::from(rect.x + 8), f64::from(rect.y + 22));
+
+                let size = format!("{} × {}", rect.width, rect.height);
                 context.set_font_size(16.0);
-                let _ = context.show_text(&format!("{} × {}", rect.width, rect.height));
+                let Ok(extents) = context.text_extents(&size) else {
+                    return;
+                };
+                // Above the selection when there is room, below it otherwise.
+                let baseline = if y > 28.0 { y - 10.0 } else { y + h + 24.0 };
+                context.move_to(x - extents.x_bearing(), baseline);
+                let _ = context.show_text(&size);
             }
         });
         overlay.add_overlay(&drawing);
@@ -179,7 +217,7 @@ impl RegionOverlay {
         });
         drag.connect_drag_end({
             let state = Rc::clone(&state);
-            let sender = sender.clone();
+            let answer = Rc::clone(&answer);
             let window = window.clone();
             move |gesture, offset_x, offset_y| {
                 // Releasing the pointer confirms the selection. Waiting for a
@@ -196,7 +234,7 @@ impl RegionOverlay {
                     state.confirm()
                 };
                 if let Some(rect) = confirmed {
-                    let _ = sender.try_send(Some(rect));
+                    answer.send(Some(rect));
                     window.close();
                 }
             }
@@ -209,18 +247,22 @@ impl RegionOverlay {
         keys.set_propagation_phase(gtk::PropagationPhase::Capture);
         keys.connect_key_pressed({
             let state = Rc::clone(&state);
-            let sender = sender.clone();
+            let answer = Rc::clone(&answer);
             let window = window.clone();
             move |_, key, _, _| match key {
                 gdk::Key::Escape => {
                     state.borrow_mut().cancel();
-                    let _ = sender.try_send(None);
+                    answer.send(None);
                     window.close();
                     glib::Propagation::Stop
                 }
                 gdk::Key::Return | gdk::Key::KP_Enter => {
-                    if let Some(rect) = state.borrow().confirm() {
-                        let _ = sender.try_send(Some(rect));
+                    // The borrow has to end before close(): tearing the window
+                    // down makes GTK reset its controllers, which fires
+                    // drag-end, which borrows the very same cell.
+                    let confirmed = state.borrow().confirm();
+                    if let Some(rect) = confirmed {
+                        answer.send(Some(rect));
                         window.close();
                     }
                     glib::Propagation::Stop
@@ -244,31 +286,55 @@ impl RegionOverlay {
                     return;
                 };
                 let geometry = monitor.geometry();
+                let scale = monitor.scale_factor().max(1);
                 *placement.borrow_mut() = OverlayPlacement {
                     origin: (geometry.x(), geometry.y()),
-                    scale: monitor.scale_factor(),
+                    scale,
                 };
+                // The snapshot holds device pixels while the widget tree works
+                // in logical units. Without this the picture is drawn `scale`
+                // times too large and the selection lands somewhere else.
+                if let Some(paintable) = picture.paintable() {
+                    picture.set_size_request(
+                        paintable.intrinsic_width() / scale,
+                        paintable.intrinsic_height() / scale,
+                    );
+                }
                 stage.move_(&picture, -f64::from(geometry.x()), -f64::from(geometry.y()));
                 drawing.queue_draw();
             }
         });
         window.connect_close_request({
-            let sender = sender.clone();
+            let answer = Rc::clone(&answer);
             move |_| {
-                let _ = sender.try_send(None);
+                answer.send(None);
                 glib::Propagation::Proceed
             }
         });
-        window.connect_destroy({
-            let sender = sender.clone();
+        window.connect_unmap({
+            let answer = Rc::clone(&answer);
             move |_| {
-                // A surface torn down from the outside never emits a close
-                // request. Without this the capture would wait forever and the
-                // whole application would sit there holding a modal grab.
-                let _ = sender.try_send(None);
+                // The overlay can leave the screen without being closed, for
+                // instance when the session locks or the workspace changes.
+                answer.send(None);
             }
         });
-        drop(sender);
+        // Commands run one at a time, so an overlay that stopped answering
+        // would freeze every later capture. The exits above cover the cases we
+        // know of; this is the backstop for the ones we do not.
+        glib::timeout_add_seconds_local_once(OVERLAY_DEADLINE_SECONDS, {
+            let window = window.clone();
+            move || {
+                // Same care as in withdraw: the surface may be long gone.
+                if window.surface().is_some() && window.is_visible() {
+                    tracing::warn!("region selection timed out; closing the overlay");
+                    window.close();
+                }
+            }
+        });
+        // Only the widget callbacks may keep the answer alive from here on:
+        // once GTK drops them the guard replies on its own.
+        drop(answer);
         window.fullscreen();
         window.present();
         drawing.grab_focus();
@@ -284,17 +350,19 @@ impl RegionOverlay {
 ///
 /// The caller grabs the selected pixels straight from the root window, so
 /// returning while the overlay is still mapped bakes the selection frame and
-/// its size label into the screenshot.
+/// its size label into the screenshot. Hiding the window only queues the work:
+/// the surface still has to reach the server and whatever sat underneath has
+/// to repaint, hence the flush and the settle delay.
 async fn withdraw(window: &gtk::Window) {
+    // The surface can already be gone, for instance when something outside the
+    // application destroyed it. Touching the window then raises BadDrawable,
+    // and GTK turns X errors into an abort.
+    let Some(surface) = window.surface() else {
+        return;
+    };
     window.set_visible(false);
-    for _ in 0..40 {
-        if !window.is_mapped() {
-            break;
-        }
-        glib::timeout_future(std::time::Duration::from_millis(5)).await;
-    }
-    // Unmapping only queues the repaint of whatever sat underneath.
-    glib::timeout_future(std::time::Duration::from_millis(60)).await;
+    surface.display().flush();
+    glib::timeout_future(std::time::Duration::from_millis(80)).await;
 }
 
 fn draw_hint(context: &cairo::Context, width: f64, height: f64, hint: &str) {
