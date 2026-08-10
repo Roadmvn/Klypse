@@ -450,5 +450,5 @@ msgstr "Fermer l’erreur"
 msgid "Klypse region selector"
 msgstr "Sélecteur de zone Klypse"
 
-msgid "Drag to select a capture region, then press Enter"
-msgstr "Faites glisser pour sélectionner une zone, puis appuyez sur Entrée"
+msgid "Drag to select a region. Enter confirms, Esc cancels."
+msgstr "Tracez une zone. Entrée valide, Échap annule."
