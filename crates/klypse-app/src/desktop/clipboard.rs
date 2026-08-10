@@ -21,16 +21,28 @@ pub fn capture_content_provider(
 }
 
 pub fn copy_record(record: &CaptureRecord) -> Result<(), KlypseError> {
-    set_clipboard_content(capture_content_provider(record)?)
+    if record.kind == CaptureKind::Video {
+        return set_clipboard_content(file_provider(&record.path));
+    }
+    set_clipboard_content(image_provider(&record.path)?)
 }
 
 pub fn copy_static_image(path: &Path) -> Result<(), KlypseError> {
+    set_clipboard_content(image_provider(path)?)
+}
+
+/// Builds the clipboard payload for a picture: image formats only.
+///
+/// Advertising the file next to the image breaks pasting into Chromium based
+/// browsers. As soon as they see `text/uri-list` they drop every other format
+/// and hand the page a bare file name, so the picture never arrives. Dragging
+/// still needs the file, which is why `capture_content_provider` keeps it.
+pub fn image_provider(path: &Path) -> Result<gdk::ContentProvider, KlypseError> {
     let texture =
         gdk::Texture::from_filename(path).map_err(|error| KlypseError::Media(error.to_string()))?;
     let pixels = gdk::ContentProvider::for_value(&texture.to_value());
     let png = gdk::ContentProvider::for_bytes("image/png", &texture.save_to_png_bytes());
-    let file = file_provider(path);
-    set_clipboard_content(gdk::ContentProvider::new_union(&[pixels, png, file]))
+    Ok(gdk::ContentProvider::new_union(&[pixels, png]))
 }
 
 pub fn copy_flattened_image(
