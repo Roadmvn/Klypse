@@ -184,7 +184,11 @@ fn recoverable_row(
                         let _ = commands.try_send(AppCommand::CompleteRecordingRecovery);
                     }
                     Ok(Err(error)) => {
-                        show_status(&status, &error.to_string(), true);
+                        // The raw error names internals ("a storage lock was
+                        // poisoned"); keep it in the log, tell the user what
+                        // happened.
+                        tracing::warn!(%error, "recovery action failed");
+                        show_status(&status, &gettext("Recovery action failed"), true);
                         button.set_sensitive(true);
                     }
                     Err(_) => {
@@ -215,7 +219,11 @@ fn recoverable_row(
                         let _ = commands.try_send(AppCommand::CompleteRecordingRecovery);
                     }
                     Ok(Err(error)) => {
-                        show_status(&status, &error.to_string(), true);
+                        // The raw error names internals ("a storage lock was
+                        // poisoned"); keep it in the log, tell the user what
+                        // happened.
+                        tracing::warn!(%error, "recovery action failed");
+                        show_status(&status, &gettext("Recovery action failed"), true);
                         button.set_sensitive(true);
                     }
                     Err(_) => {
@@ -262,7 +270,11 @@ fn invalid_row(
                         let _ = commands.try_send(AppCommand::CompleteRecordingRecovery);
                     }
                     Ok(Err(error)) => {
-                        show_status(&status, &error.to_string(), true);
+                        // The raw error names internals ("a storage lock was
+                        // poisoned"); keep it in the log, tell the user what
+                        // happened.
+                        tracing::warn!(%error, "recovery action failed");
+                        show_status(&status, &gettext("Recovery action failed"), true);
                         button.set_sensitive(true);
                     }
                     Err(_) => {
@@ -321,7 +333,11 @@ fn missing_row(
                         show_status(&status, &gettext("Capture location updated"), false);
                     }
                     Ok(Err(error)) => {
-                        show_status(&status, &error.to_string(), true);
+                        // The raw error names internals ("a storage lock was
+                        // poisoned"); keep it in the log, tell the user what
+                        // happened.
+                        tracing::warn!(%error, "recovery action failed");
+                        show_status(&status, &gettext("Recovery action failed"), true);
                         button.set_sensitive(true);
                     }
                     Err(_) => {
@@ -351,7 +367,11 @@ fn missing_row(
                         dismiss_recovery_row(&row);
                     }
                     Ok(Err(error)) => {
-                        show_status(&status, &error.to_string(), true);
+                        // The raw error names internals ("a storage lock was
+                        // poisoned"); keep it in the log, tell the user what
+                        // happened.
+                        tracing::warn!(%error, "recovery action failed");
+                        show_status(&status, &gettext("Recovery action failed"), true);
                         button.set_sensitive(true);
                     }
                     Err(_) => {
@@ -393,7 +413,11 @@ fn stale_thumbnail_row(
                 {
                     Ok(Ok(())) => dismiss_recovery_row(&row),
                     Ok(Err(error)) => {
-                        show_status(&status, &error.to_string(), true);
+                        // The raw error names internals ("a storage lock was
+                        // poisoned"); keep it in the log, tell the user what
+                        // happened.
+                        tracing::warn!(%error, "recovery action failed");
+                        show_status(&status, &gettext("Recovery action failed"), true);
                         button.set_sensitive(true);
                     }
                     Err(_) => {

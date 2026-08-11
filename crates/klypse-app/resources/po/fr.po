@@ -216,6 +216,18 @@ msgstr "Finalisation de l’enregistrement"
 msgid "Recording failed"
 msgstr "Échec de l’enregistrement"
 
+msgid "Recording saved"
+msgstr "Enregistrement sauvegardé"
+
+msgid "Use the buttons above, or bind the klypse commands to keyboard shortcuts in your desktop settings."
+msgstr "Utilisez les boutons ci-dessus, ou associez les commandes klypse à des raccourcis clavier dans les réglages de votre bureau."
+
+msgid "Leave empty to use the default:"
+msgstr "Laissez vide pour utiliser le dossier par défaut :"
+
+msgid "GNOME, KDE and Xfce already own the Print keys, so these often cannot be registered. Use the desktop shortcut commands above instead."
+msgstr "GNOME, KDE et Xfce utilisent déjà les touches Impr écran, ces raccourcis ne peuvent donc souvent pas être enregistrés. Utilisez plutôt les commandes de raccourci ci-dessus."
+
 msgid "Action failed"
 msgstr "Échec de l’action"
 
@@ -233,6 +245,9 @@ msgstr "Restaurer"
 
 msgid "Discard"
 msgstr "Supprimer"
+
+msgid "Discard Changes"
+msgstr "Ne pas enregistrer"
 
 msgid "Capture restored"
 msgstr "Capture restaurée"
@@ -453,5 +468,5 @@ msgstr "Fermer l’erreur"
 msgid "Klypse region selector"
 msgstr "Sélecteur de zone Klypse"
 
-msgid "Drag to select a region. Enter confirms, Esc cancels."
-msgstr "Tracez une zone. Entrée valide, Échap annule."
+msgid "Drag to select a region. Release to confirm, Esc cancels."
+msgstr "Faites glisser pour sélectionner une zone. Relâchez pour valider, Échap annule."
