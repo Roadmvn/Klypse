@@ -129,6 +129,26 @@ fn invalid_temporary_media_and_marker_escape_are_never_offered() {
     assert!(outside.exists());
 }
 
+#[test]
+fn the_region_selector_scratch_snapshot_is_never_offered_as_a_capture() {
+    let fixture = Fixture::new();
+    // What the X11 region selector leaves behind while a selection is running.
+    let scratch = fixture.paths.temporary.join("klypse-x11-abc123.png");
+    RgbaImage::new(32, 24).save(&scratch).unwrap();
+
+    let report = fixture.reconciler.scan().unwrap();
+
+    assert!(
+        report.recoverable.is_empty(),
+        "scratch snapshot offered as a recoverable capture"
+    );
+    assert!(
+        report.unrecoverable.is_empty(),
+        "scratch snapshot reported as a broken file"
+    );
+    assert!(scratch.exists(), "scan must not touch the scratch snapshot");
+}
+
 #[cfg(unix)]
 #[test]
 fn discard_rejects_a_symlink_escape_without_touching_the_target() {

@@ -21,6 +21,9 @@ use crate::{
 };
 
 const RECOVERY_MARKER_NAME: &str = ".klypse-session.json";
+/// Prefix of the throwaway snapshots the X11 region selector writes while a
+/// selection is in progress. Kept in sync with `klypse-platform`.
+pub const SCRATCH_PREFIX: &str = "klypse-x11-";
 const THUMBNAIL_EDGE: u32 = 256;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -128,7 +131,15 @@ impl Reconciler {
             .collect::<HashSet<_>>();
         for directory in [&self.paths.temporary, &self.paths.orphans] {
             for path in directory_files(directory)? {
-                if path.file_name().and_then(|name| name.to_str()) == Some(RECOVERY_MARKER_NAME) {
+                let name = path.file_name().and_then(|name| name.to_str());
+                if name == Some(RECOVERY_MARKER_NAME) {
+                    continue;
+                }
+                // The region selector writes a full screen snapshot here while
+                // the user picks an area. It is scratch, not a lost capture:
+                // offering it up would either import a stray full screen shot
+                // or invite the user to delete evidence of a stuck selection.
+                if name.is_some_and(|name| name.starts_with(SCRATCH_PREFIX)) {
                     continue;
                 }
                 let canonical = match self.owned_media_path(&path) {
