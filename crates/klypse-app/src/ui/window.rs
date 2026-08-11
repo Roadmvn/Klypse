@@ -7,7 +7,7 @@ use klypse_platform::CapabilityReport;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use crate::i18n::gettext;
+use crate::{APP_ID, i18n::gettext};
 
 #[derive(Default)]
 struct UiNotifierState {
@@ -120,6 +120,16 @@ pub(crate) fn present(
         move |_| super::settings::present(&window)
     });
     header.pack_end(&preferences);
+    let about = gtk::Button::builder()
+        .icon_name("help-about-symbolic")
+        .tooltip_text(gettext("About Klypse"))
+        .build();
+    super::set_accessible_label(&about, &gettext("About Klypse"));
+    about.connect_clicked({
+        let window = window.clone();
+        move |_| present_about(&window)
+    });
+    header.pack_end(&about);
     toolbar_view.add_top_bar(&header);
 
     let content = gtk::Box::builder()
@@ -160,4 +170,24 @@ pub(crate) fn present(
     window.set_content(Some(&toast_overlay));
     window.present();
     super::recovery::monitor(&recovery_host, gallery_event_sender, sender, recovery_scans);
+}
+
+/// Shows who made this, which version is running, and where to report a bug.
+///
+/// Everything comes from the crate metadata so the dialog cannot drift out of
+/// sync with a release.
+fn present_about(parent: &adw::ApplicationWindow) {
+    let about = adw::AboutWindow::builder()
+        .transient_for(parent)
+        .modal(true)
+        .application_name(gettext("Klypse"))
+        .application_icon(APP_ID)
+        .version(env!("CARGO_PKG_VERSION"))
+        .developer_name("Roadmvn")
+        .license_type(gtk::License::Gpl30)
+        .website(env!("CARGO_PKG_REPOSITORY"))
+        .issue_url(concat!(env!("CARGO_PKG_REPOSITORY"), "/issues"))
+        .comments(gettext("Capture, record, and annotate your Linux desktop"))
+        .build();
+    about.present();
 }

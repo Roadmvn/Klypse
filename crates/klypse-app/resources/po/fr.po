@@ -228,6 +228,12 @@ msgstr "Laissez vide pour utiliser le dossier par défaut :"
 msgid "GNOME, KDE and Xfce already own the Print keys, so these often cannot be registered. Use the desktop shortcut commands above instead."
 msgstr "GNOME, KDE et Xfce utilisent déjà les touches Impr écran, ces raccourcis ne peuvent donc souvent pas être enregistrés. Utilisez plutôt les commandes de raccourci ci-dessus."
 
+msgid "About Klypse"
+msgstr "À propos de Klypse"
+
+msgid "Capture, record, and annotate your Linux desktop"
+msgstr "Capturez, enregistrez et annotez votre bureau Linux"
+
 msgid "Action failed"
 msgstr "Échec de l’action"
 
