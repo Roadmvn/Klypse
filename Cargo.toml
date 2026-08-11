@@ -17,7 +17,7 @@ repository = "https://github.com/Roadmvn/Klypse"
 
 [workspace.dependencies]
 anyhow = "1.0.103"
-ashpd = { version = "0.13.12", default-features = false, features = ["async-io", "gtk4", "screenshot", "screencast", "global_shortcuts"] }
+ashpd = { version = "0.13.12", default-features = false, features = ["async-io", "screenshot", "screencast", "global_shortcuts"] }
 async-channel = "2.5.0"
 async-trait = "0.1"
 chrono = { version = "0.4.45", features = ["serde"] }
