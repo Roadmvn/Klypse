@@ -44,6 +44,9 @@ struct CapturePreview {
 struct GallerySelectionState {
     active: Cell<bool>,
     busy: Cell<bool>,
+    /// Set while the toggles are being driven from code, so the `toggled`
+    /// handler does not run back into the state it is currently rewriting.
+    updating: Cell<bool>,
     ids: RefCell<HashSet<Uuid>>,
     card_toggles: RefCell<
         Vec<(
@@ -183,6 +186,7 @@ impl GallerySelectionState {
         let state = Rc::new(Self {
             active: Cell::new(false),
             busy: Cell::new(false),
+            updating: Cell::new(false),
             ids: RefCell::new(HashSet::new()),
             card_toggles: RefCell::new(Vec::new()),
             select,
@@ -222,6 +226,11 @@ impl GallerySelectionState {
     }
 
     fn sync_card_toggles(&self) {
+        // set_active below emits `toggled`, whose handler calls back into sync
+        // and would borrow card_toggles again while it is still borrowed here.
+        if self.updating.replace(true) {
+            return;
+        }
         let active = self.active.get();
         let selected_ids = self.ids.borrow().clone();
         self.card_toggles
@@ -239,6 +248,7 @@ impl GallerySelectionState {
                 toggle.set_active(selected);
                 true
             });
+        self.updating.set(false);
     }
 
     fn set_active(&self, active: bool, model: &gio::ListStore) {
@@ -529,7 +539,7 @@ fn gallery_factory(
                 let Some(selection_state) = selection_state.upgrade() else {
                     return;
                 };
-                if !selection_state.active.get() {
+                if selection_state.updating.get() || !selection_state.active.get() {
                     return;
                 }
                 let Some(item) = list_item
@@ -594,7 +604,11 @@ fn gallery_factory(
         let record = item.borrow::<CaptureRecord>();
         let selection_active = selection_state.active.get();
         selection_toggle.set_visible(selection_active);
-        selection_toggle.set_active(selection_state.ids.borrow().contains(&record.id));
+        // The borrow must end before set_active: it emits `toggled`
+        // synchronously, and the handler borrows the same cell mutably. Holding
+        // it across the call panics inside a GTK trampoline, which aborts.
+        let is_selected = selection_state.ids.borrow().contains(&record.id);
+        selection_toggle.set_active(is_selected);
         picture.set_filename(record.thumbnail_path.as_ref().or(Some(&record.path)));
         kind.set_icon_name(Some(match record.kind {
             CaptureKind::Screenshot => "camera-photo-symbolic",

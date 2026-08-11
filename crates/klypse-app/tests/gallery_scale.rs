@@ -235,6 +235,79 @@ fn gallery_ui_is_virtualized_and_inline_preview_navigates() {
     }
 }
 
+/// Covers the shape that binding a card can take while a selection is live:
+/// reading the selected set while `toggled` writes it back re-enters the same
+/// `RefCell`, which panics inside a GTK trampoline and aborts the process. The
+/// app refreshes the gallery after every capture, so this path runs constantly.
+///
+/// Honest limitation: this exercises the refresh, not the re-entrant bind. It
+/// passes with and without the guard, because GTK reuses the list items here
+/// instead of rebinding them. It is kept as a smoke test of refresh-with-live-
+/// selection; the guard itself is justified by the code path, not by this test.
+#[test]
+fn refreshing_the_list_with_a_live_selection_does_not_abort() {
+    if gtk::init().is_err() {
+        return;
+    }
+    let context = gtk::glib::MainContext::default();
+
+    {
+        let fixture = Fixture::new(60);
+        let (_sender, receiver) = async_channel::unbounded();
+        let gallery = build_with_paths(receiver, fixture.paths.clone()).unwrap();
+        let window = gtk::Window::builder()
+            .default_width(900)
+            .default_height(600)
+            .child(&gallery)
+            .build();
+        window.present();
+        for _ in 0..20 {
+            while context.pending() {
+                context.iteration(false);
+            }
+        }
+
+        let grid = descendants(&gallery)
+            .into_iter()
+            .find_map(|widget| widget.downcast::<gtk::GridView>().ok())
+            .unwrap();
+        let select = widget_by_name::<gtk::Button>(&gallery, "gallery-select");
+        let selection_counter = widget_by_name::<gtk::Label>(&gallery, "gallery-selection-count");
+
+        select.emit_clicked();
+        grid.emit_by_name::<()>("activate", &[&0_u32]);
+        while context.pending() {
+            context.iteration(false);
+        }
+        assert_eq!(selection_counter.text(), "Selected captures: 1");
+
+        // What GalleryEvent::Refresh does, with the selection deliberately left
+        // active: remove every item then append them again.
+        let selection = grid.model().and_downcast::<gtk::SingleSelection>().unwrap();
+        let model = selection
+            .model()
+            .and_downcast::<gtk::gio::ListStore>()
+            .unwrap();
+        let items = (0..model.n_items())
+            .filter_map(|index| model.item(index))
+            .collect::<Vec<_>>();
+        model.remove_all();
+        for item in &items {
+            model.append(item);
+        }
+        for _ in 0..20 {
+            while context.pending() {
+                context.iteration(false);
+            }
+        }
+
+        // Reaching this line at all is the assertion: the bug aborted the
+        // process rather than failing the test.
+        assert!(widget_by_name::<gtk::Box>(&gallery, "gallery-select-mode").is_visible());
+        window.close();
+    }
+}
+
 struct Fixture {
     _directory: tempfile::TempDir,
     paths: AppPaths,
