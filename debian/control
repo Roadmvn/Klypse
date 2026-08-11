@@ -1,7 +1,7 @@
 Source: klypse
 Section: graphics
 Priority: optional
-Maintainer: Roadmvn <roadmvn@outlook.fr>
+Maintainer: Roadmvn <roadmvn@users.noreply.github.com>
 Build-Depends:
  appstream,
  debhelper-compat (= 13),
