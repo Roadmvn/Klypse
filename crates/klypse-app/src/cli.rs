@@ -7,7 +7,12 @@ use klypse_domain::{AppCommand, CaptureKind, CaptureRequest, CaptureTarget, Reco
 #[command(
     name = "klypse",
     version,
-    about = "Capture and annotate your Linux desktop"
+    about = "Capture, record, and annotate your Linux desktop",
+    long_about = "Capture, record, and annotate your Linux desktop.\n\n\
+                  Running klypse with no arguments opens the gallery. The \
+                  subcommands below are meant to be bound to keyboard shortcuts \
+                  in your desktop settings, which is the supported way to get \
+                  global shortcuts on GNOME, KDE and Xfce."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -16,38 +21,54 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Open the gallery window
     Open,
+    /// Take a screenshot
     Capture {
+        /// What to capture
         #[arg(value_enum)]
         target: CaptureTargetArg,
     },
+    /// Start recording a video or an animated GIF
     Record {
+        /// Output format
         #[arg(value_enum)]
         kind: RecordingKindArg,
+        /// What to record
         #[arg(value_enum, default_value = "area")]
         target: RecordingTargetArg,
     },
+    /// Stop the recording in progress and save it
     Stop,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum CaptureTargetArg {
+    /// Drag to select a region of the screen
     Area,
+    /// The whole desktop, every monitor included
     Screen,
+    /// Pick a window to capture
     Window,
+    /// The window currently focused
     ActiveWindow,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum RecordingKindArg {
+    /// Silent WebM video
     Video,
+    /// Animated GIF, capped by the duration set in Preferences
     Gif,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum RecordingTargetArg {
+    /// Drag to select a region of the screen
     Area,
+    /// The whole desktop, every monitor included
     Screen,
+    /// Pick a window to record
     Window,
 }
 

@@ -129,7 +129,7 @@ impl RegionOverlay {
             .vexpand(true)
             .can_focus(true)
             .build();
-        let selector_label = gettext("Drag to select a region. Enter confirms, Esc cancels.");
+        let selector_label = gettext("Drag to select a region. Release to confirm, Esc cancels.");
         drawing.set_tooltip_text(Some(&selector_label));
         super::set_accessible_label(&drawing, &selector_label);
         drawing.set_draw_func({

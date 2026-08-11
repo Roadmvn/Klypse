@@ -594,7 +594,7 @@ pub fn present(
             );
             dialog.add_responses(&[
                 ("cancel", &gettext("Cancel")),
-                ("discard", &gettext("Discard")),
+                ("discard", &gettext("Discard Changes")),
                 ("save", &gettext("Save")),
             ]);
             dialog.set_close_response("cancel");

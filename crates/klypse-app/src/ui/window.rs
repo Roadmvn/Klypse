@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use async_channel::Sender;
 use gtk::{Align, Orientation, glib, prelude::*};
 use klypse_domain::AppCommand;
-use klypse_platform::{CapabilityReport, CapabilityStatus};
+use klypse_platform::CapabilityReport;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
@@ -44,6 +44,30 @@ impl UiNotifier {
             add_error_toast(&overlay, &message);
         } else {
             self.state.borrow_mut().pending_error = Some(message);
+        }
+    }
+
+    /// Confirms a successful action in the window.
+    ///
+    /// Without this the happy path ends in silence: the only feedback was a
+    /// desktop notification, which the user can have turned off. Dropped rather
+    /// than queued when no window is up - a stale "saved" toast minutes later
+    /// would be worse than none.
+    pub(crate) fn show_info(&self, message: impl Into<String>) {
+        let overlay = self
+            .state
+            .borrow()
+            .overlay
+            .as_ref()
+            .and_then(glib::WeakRef::upgrade);
+        if let Some(overlay) = overlay {
+            overlay.add_toast(
+                adw::Toast::builder()
+                    .title(message.into())
+                    .use_markup(false)
+                    .timeout(4)
+                    .build(),
+            );
         }
     }
 }
@@ -129,7 +153,6 @@ pub(crate) fn present(
             content.append(&failure);
         }
     }
-    content.append(&diagnostics(&capabilities));
     toolbar_view.set_content(Some(&content));
     let toast_overlay = adw::ToastOverlay::new();
     toast_overlay.set_child(Some(&toolbar_view));
@@ -137,56 +160,4 @@ pub(crate) fn present(
     window.set_content(Some(&toast_overlay));
     window.present();
     super::recovery::monitor(&recovery_host, gallery_event_sender, sender, recovery_scans);
-}
-
-fn diagnostics(report: &CapabilityReport) -> gtk::Expander {
-    let list = gtk::Box::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(6)
-        .margin_top(12)
-        .margin_bottom(12)
-        .margin_start(12)
-        .margin_end(12)
-        .build();
-
-    let display = gtk::Label::new(Some(&format!(
-        "{}: {}",
-        gettext("Display server"),
-        report.display_name()
-    )));
-    display.set_xalign(0.0);
-    list.append(&display);
-    list.append(&capability_row(
-        &gettext("Static capture"),
-        &report.static_capture,
-    ));
-    list.append(&capability_row(
-        &gettext("Video recording"),
-        &report.video_recording,
-    ));
-    list.append(&capability_row(
-        &gettext("GIF recording"),
-        &report.gif_recording,
-    ));
-    list.append(&capability_row(
-        &gettext("Global shortcuts"),
-        &report.global_shortcuts,
-    ));
-
-    gtk::Expander::builder()
-        .label(gettext("Diagnostics"))
-        .child(&list)
-        .build()
-}
-
-fn capability_row(label: &str, status: &CapabilityStatus) -> gtk::Label {
-    let state = if status.available {
-        gettext("Available")
-    } else {
-        gettext("Unavailable")
-    };
-    let row = gtk::Label::new(Some(&format!("{label}: {state}")));
-    row.set_xalign(0.0);
-    row.set_tooltip_text(Some(&status.detail));
-    row
 }

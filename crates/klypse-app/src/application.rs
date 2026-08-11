@@ -311,6 +311,12 @@ fn dispatch_commands(
             match outcome {
                 CaptureOutcome::Saved(record) => {
                     tracing::info!(capture_id = %record.id, "capture saved");
+                    // StopRecording also returns Saved, so the wording has to
+                    // follow what was actually produced.
+                    notifier.show_info(match record.kind {
+                        CaptureKind::Screenshot => gettext("Capture saved"),
+                        CaptureKind::Video | CaptureKind::Gif => gettext("Recording saved"),
+                    });
                 }
                 CaptureOutcome::Cancelled | CaptureOutcome::Ignored => {}
                 CaptureOutcome::Failed(error) => {

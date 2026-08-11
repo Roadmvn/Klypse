@@ -10,7 +10,7 @@ StartupNotify=true
 Categories=Graphics;
 Keywords=screenshot;capture;screen;recording;GIF;annotation;
 Keywords[fr]=capture;écran;enregistrement;GIF;annotation;
-Actions=CaptureArea;CaptureScreen;RecordGif;
+Actions=CaptureArea;CaptureScreen;RecordVideo;RecordGif;StopRecording;
 X-GNOME-UsesNotifications=true
 
 [Desktop Action CaptureArea]
@@ -23,7 +23,17 @@ Name=Capture Screen
 Name[fr]=Capturer l’écran
 Exec=klypse capture screen
 
+[Desktop Action RecordVideo]
+Name=Record Video
+Name[fr]=Enregistrer une vidéo
+Exec=klypse record video area
+
 [Desktop Action RecordGif]
 Name=Record GIF
 Name[fr]=Enregistrer un GIF
 Exec=klypse record gif area
+
+[Desktop Action StopRecording]
+Name=Stop Recording
+Name[fr]=Arrêter l’enregistrement
+Exec=klypse stop
