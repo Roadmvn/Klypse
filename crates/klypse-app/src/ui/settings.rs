@@ -1,6 +1,7 @@
 use gtk::{gio, prelude::*};
 use klypse_domain::HotkeyAction;
 use klypse_platform::{CapabilityReport, CapabilityStatus, cli_fallback_commands};
+use klypse_storage::AppPaths;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
@@ -34,8 +35,11 @@ pub fn present(parent: &adw::ApplicationWindow) {
         .build();
     page.add(&general_group(parent, &settings));
     page.add(&gif_group(&settings));
-    page.add(&shortcut_group(&settings));
+    // The desktop owns the Print keys on GNOME, KDE and Xfce, so the app's own
+    // shortcuts usually cannot be registered. Show the escape hatch that works
+    // before the rows that often do nothing.
     page.add(&fallback_group());
+    page.add(&shortcut_group(&settings));
     page.add(&diagnostics_group(&CapabilityReport::detect()));
     dialog.add(&page);
     dialog.present();
@@ -55,6 +59,18 @@ fn general_group(parent: &adw::ApplicationWindow, settings: &AppSettings) -> adw
                 .unwrap_or_default(),
         )
         .build();
+    // Left empty the row looked broken on a fresh install. Show where captures
+    // actually land as a placeholder - setting the text would pin the path and
+    // stop it following the user's Pictures directory.
+    if let Ok(paths) = AppPaths::discover() {
+        directory.set_show_apply_button(false);
+        if let Some(default) = paths.captures.to_str() {
+            directory.set_tooltip_text(Some(&format!(
+                "{} {default}",
+                gettext("Leave empty to use the default:")
+            )));
+        }
+    }
     let browse = gtk::Button::builder()
         .icon_name("folder-open-symbolic")
         .tooltip_text(gettext("Choose a capture folder"))
@@ -188,7 +204,9 @@ fn gif_group(settings: &AppSettings) -> adw::PreferencesGroup {
 fn shortcut_group(settings: &AppSettings) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::builder()
         .title(gettext("Keyboard shortcuts"))
-        .description(gettext("GTK accelerator syntax is supported"))
+        .description(gettext(
+            "GNOME, KDE and Xfce already own the Print keys, so these often cannot be registered. Use the desktop shortcut commands above instead.",
+        ))
         .build();
     for (title, action) in [
         (gettext("Capture area"), HotkeyAction::CaptureArea),

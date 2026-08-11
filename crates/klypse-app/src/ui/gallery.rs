@@ -340,7 +340,10 @@ pub fn build_with_paths(
         .factory(&factory)
         .max_columns(5)
         .min_columns(1)
-        .single_click_activate(true)
+        // Not single_click_activate: GTK ties it to selecting rows on hover,
+        // so the selection followed the pointer across the grid. Click selects,
+        // double click opens the preview, which is what the rest of the desktop
+        // does.
         .build();
     let gallery_label = gettext("Capture gallery");
     grid.set_tooltip_text(Some(&gallery_label));
@@ -351,11 +354,15 @@ pub fn build_with_paths(
         .hexpand(true)
         .child(&grid)
         .build();
-    let empty = gtk::Label::builder()
-        .label(gettext("Your captures will appear here"))
-        .css_classes(["title-2"])
-        .halign(gtk::Align::Center)
-        .valign(gtk::Align::Center)
+    // A bare centred label taught a first time user nothing. The status page
+    // keeps the same title and adds the one thing that was missing: what to do
+    // next.
+    let empty = adw::StatusPage::builder()
+        .icon_name("camera-photo-symbolic")
+        .title(gettext("Your captures will appear here"))
+        .description(gettext(
+            "Use the buttons above, or bind the klypse commands to keyboard shortcuts in your desktop settings.",
+        ))
         .build();
     stack.add_named(&empty, Some("empty"));
 
