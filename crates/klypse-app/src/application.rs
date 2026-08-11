@@ -14,7 +14,7 @@ use klypse_domain::{
 };
 use klypse_media::Thumbnailer;
 use klypse_platform::{
-    BackendChoice, BackendSelector, CapabilityReport, HotkeyBinding, HotkeyManager,
+    BackendChoice, BackendSelector, CapabilityReport, HotkeyBinding, HotkeyManager, HotkeyMode,
     PortalCaptureBackend, X11CaptureBackend,
 };
 use klypse_storage::{AppPaths, CaptureRecord, CaptureRepository, CaptureStore, open_database};
@@ -36,6 +36,13 @@ use crate::{
     ui::recording::RecordingPresentation,
     ui::region_overlay::RegionOverlay,
 };
+
+/// How long a single command may run before the queue gives up on it.
+///
+/// Longer than the region selector's own deadline so that a stuck selection is
+/// reported by the selector itself, with its own message, rather than by this
+/// catch-all.
+const COMMAND_DEADLINE: Duration = Duration::from_secs(330);
 
 pub fn run() -> glib::ExitCode {
     let application = adw::Application::builder()
@@ -112,6 +119,11 @@ fn start_hotkeys(actions: Sender<HotkeyAction>) {
                 return;
             }
         };
+        if manager.mode() == HotkeyMode::DesktopCliFallback {
+            tracing::info!(
+                "the desktop already owns these keys; bind them to the klypse commands instead"
+            );
+        }
         tracing::info!(mode = ?manager.mode(), "global shortcut mode selected");
         while rebind_receiver.recv().await.is_ok() {
             if let Err(error) = manager.rebind(hotkey_bindings(settings.as_ref())).await {
@@ -283,7 +295,19 @@ fn dispatch_commands(
                     }
                 }
             }
-            let outcome = runtime.as_mut().unwrap().execute(command).await;
+            // Commands are executed one at a time, so a single action that
+            // never finishes would silently swallow every later one and the
+            // application would look dead while still redrawing. Whatever the
+            // reason, give up rather than take the queue down with it.
+            let execution = runtime.as_mut().unwrap().execute(command);
+            let outcome = match glib::future_with_timeout(COMMAND_DEADLINE, execution).await {
+                Ok(outcome) => outcome,
+                Err(_) => {
+                    tracing::error!("command timed out; releasing the queue");
+                    notifier.show_error(gettext("Klypse stopped responding to that action"));
+                    continue;
+                }
+            };
             match outcome {
                 CaptureOutcome::Saved(record) => {
                     tracing::info!(capture_id = %record.id, "capture saved");
@@ -294,6 +318,7 @@ fn dispatch_commands(
                     notifier.show_error(format!("{}: {error}", gettext("Action failed")));
                 }
             }
+            tracing::debug!("command completed");
         }
     });
 }
