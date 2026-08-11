@@ -36,6 +36,8 @@ flatpak run io.github.roadmvn.Klypse -- open
 
 The sandbox grants Wayland, fallback X11, GPU acceleration, and `xdg-pictures`. It does not grant network, full home-directory, or raw host D-Bus access.
 
+For a Flatpak installation, replace `klypse` in the examples with `flatpak run io.github.roadmvn.Klypse --`.
+
 ## Use
 
 Launch Klypse from the application menu or with `klypse open`. The command-line interface uses the same application command bus as the buttons and shortcuts:
@@ -64,7 +66,22 @@ Default shortcuts:
 | Record GIF | `Ctrl+Shift+Print` |
 | Stop recording | `Ctrl+Shift+Escape` |
 
-On X11, Klypse uses its direct capture backend and selection overlay. On Wayland, it uses the desktop Screenshot, ScreenCast/PipeWire, and GlobalShortcuts portals; the compositor owns the secure picker. For area recording, current Wayland portals may offer a monitor or window rather than a free-form rectangle. If the Wayland shortcut portal is unavailable, configure the desktop environment to invoke the CLI commands above.
+On X11, Klypse uses its direct capture backend and selection overlay. On Wayland, it uses the desktop Screenshot, ScreenCast/PipeWire, and GlobalShortcuts portals; the compositor owns the secure picker. For area recording, current Wayland portals may offer a monitor or window rather than a free-form rectangle.
+
+### If the shortcuts above do nothing
+
+GNOME, KDE, and Xfce already own the `Print` keys, so Klypse usually cannot register them and falls back to its command line. This is expected, and the fix takes a minute: open your desktop's keyboard settings, add a custom shortcut, and point it at the matching command.
+
+| Shortcut you want | Command to bind |
+|---|---|
+| Capture area | `klypse capture area` |
+| Capture screen | `klypse capture screen` |
+| Capture window | `klypse capture window` |
+| Record video | `klypse record video area` |
+| Record GIF | `klypse record gif area` |
+| Stop recording | `klypse stop` |
+
+Klypse also lists these commands under **Preferences → Desktop shortcut commands**, ready to copy.
 
 The editor supports rectangle, ellipse, line, arrow, text, freehand, crop, pixelation, and blur tools, plus undo/redo, zoom, non-destructive save, flattened export, and clipboard copy.
 
@@ -73,8 +90,6 @@ The editor supports rectangle, ellipse, line, arrow, text, freehand, crop, pixel
 Right-click a capture to select it, copy or edit it, reveal its folder, remove it from the gallery, or delete it from disk. Destructive actions always require confirmation.
 
 ![Klypse gallery context menu](docs/images/klypse-gallery-context-menu.png)
-
-For a Flatpak installation, replace `klypse` in the examples with `flatpak run io.github.roadmvn.Klypse --`.
 
 ## Local data and privacy
 
@@ -101,6 +116,36 @@ flatpak uninstall --user io.github.roadmvn.Klypse
 ```
 
 Package removal intentionally preserves captures and native user data. `flatpak uninstall --delete-data` removes Flatpak-private database/cache state, but files saved in `~/Pictures/Klypse` remain user-owned and must be removed manually if desired.
+
+## Build from source
+
+Klypse is Linux only. macOS and Windows are not planned.
+
+You need Rust 1.85 or newer (the workspace uses edition 2024), which the packaged `rustc` on some distributions does not yet satisfy. Install it with [rustup](https://rustup.rs) if in doubt.
+
+On Debian, Ubuntu, and Kali, the build dependencies are:
+
+```bash
+sudo apt install --no-install-recommends \
+  build-essential pkg-config gettext \
+  libgtk-4-dev libadwaita-1-dev libsqlite3-dev \
+  libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+  gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+  gstreamer1.0-plugins-bad gstreamer1.0-libav \
+  libpipewire-0.3-dev \
+  libxcb1-dev libxcb-composite0-dev libxcb-randr0-dev libxcb-xfixes0-dev
+```
+
+Then:
+
+```bash
+cargo build --release
+cargo run -p klypse-app
+```
+
+Other distributions ship the same libraries under different names; the authoritative list is the `apt-get install` step in [`.github/workflows/review.yml`](.github/workflows/review.yml), which is what CI actually installs.
+
+If you prefer not to install anything on your host, `./scripts/dev-container.sh cargo build --release` runs the whole toolchain in Docker instead.
 
 ## Development transparency
 
