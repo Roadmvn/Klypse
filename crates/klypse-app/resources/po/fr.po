@@ -219,6 +219,9 @@ msgstr "Échec de l’enregistrement"
 msgid "Action failed"
 msgstr "Échec de l’action"
 
+msgid "Klypse stopped responding to that action"
+msgstr "Klypse ne répond plus à cette action"
+
 msgid "Recovery needed"
 msgstr "Récupération nécessaire"
 

@@ -7,6 +7,12 @@ pub const SCHEMA_VERSION: i64 = 1;
 pub fn open_database(paths: &AppPaths) -> Result<Connection, StorageError> {
     paths.ensure()?;
     let mut connection = Connection::open(&paths.database)?;
+    // The capture runtime, the gallery and the recovery scanner each hold their
+    // own connection to this file. Without these, a writer that loses the race
+    // fails immediately and the freshly taken capture is parked in orphans/
+    // without the user ever being told.
+    connection.pragma_update(None, "journal_mode", "WAL")?;
+    connection.busy_timeout(std::time::Duration::from_secs(5))?;
     migrate(&mut connection)?;
     Ok(connection)
 }

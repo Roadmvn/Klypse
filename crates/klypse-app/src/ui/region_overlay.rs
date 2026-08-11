@@ -322,18 +322,24 @@ impl RegionOverlay {
         // Commands run one at a time, so an overlay that stopped answering
         // would freeze every later capture. The exits above cover the cases we
         // know of; this is the backstop for the ones we do not.
+        //
+        // It answers FIRST and unconditionally. Relying on close() was not
+        // enough: an overlay that never got a surface ignores it, and the
+        // window keeps its controllers alive through a reference cycle GTK
+        // never collects, so the guard alone would never run either.
         glib::timeout_add_seconds_local_once(OVERLAY_DEADLINE_SECONDS, {
+            let answer = Rc::clone(&answer);
             let window = window.clone();
             move || {
-                // Same care as in withdraw: the surface may be long gone.
+                tracing::warn!("region selection timed out; releasing the capture");
+                answer.send(None);
                 if window.surface().is_some() && window.is_visible() {
-                    tracing::warn!("region selection timed out; closing the overlay");
                     window.close();
                 }
             }
         });
-        // Only the widget callbacks may keep the answer alive from here on:
-        // once GTK drops them the guard replies on its own.
+        // Only the widget callbacks and the backstop may keep the answer alive
+        // from here on: once GTK drops them the guard replies on its own.
         drop(answer);
         window.fullscreen();
         window.present();

@@ -116,6 +116,31 @@ fn gallery_ui_is_virtualized_and_inline_preview_navigates() {
                 .count(),
             1
         );
+        // Refresh the list while the selection is still live. The app does this
+        // after every capture, and binding a card then reads the selected set
+        // while `toggled` writes it back into the same cell. Kept inside this
+        // test on purpose: a second #[test] touching GTK runs on another thread
+        // and segfaults, since GTK is single threaded.
+        {
+            let selection = grid.model().and_downcast::<gtk::SingleSelection>().unwrap();
+            let model = selection
+                .model()
+                .and_downcast::<gtk::gio::ListStore>()
+                .unwrap();
+            let items = (0..model.n_items())
+                .filter_map(|index| model.item(index))
+                .collect::<Vec<_>>();
+            model.remove_all();
+            for item in &items {
+                model.append(item);
+            }
+            while context.pending() {
+                context.iteration(false);
+            }
+            assert!(select_mode.is_visible());
+            assert_eq!(selection_counter.text(), "Selected captures: 1");
+        }
+
         select_all.emit_clicked();
         assert_eq!(selection_counter.text(), "Selected captures: 1000");
         clear_selection.emit_clicked();
