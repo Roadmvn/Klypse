@@ -143,8 +143,16 @@ async fn start_session(
     actions: Sender<HotkeyAction>,
 ) -> Result<(HotkeyMode, HotkeySession), KlypseError> {
     match preferred_mode {
-        HotkeyMode::X11 => X11HotkeyBackend::start(bindings, actions)
-            .map(|backend| (HotkeyMode::X11, HotkeySession::X11(backend))),
+        // A desktop that already owns these keys - which is the norm on GNOME,
+        // KDE and Xfce for the Print family - makes registration fail. Degrade
+        // to the CLI fallback like the portal arm does instead of propagating:
+        // the caller treats an error as fatal and stops listening for rebinds,
+        // which used to leave the shortcut preferences dead for the whole
+        // session.
+        HotkeyMode::X11 => match X11HotkeyBackend::start(bindings, actions) {
+            Ok(backend) => Ok((HotkeyMode::X11, HotkeySession::X11(backend))),
+            Err(_) => Ok((HotkeyMode::DesktopCliFallback, HotkeySession::Fallback)),
+        },
         HotkeyMode::Portal => match PortalHotkeyBackend::start(bindings, actions).await {
             Ok(backend) => Ok((HotkeyMode::Portal, HotkeySession::Portal(backend))),
             Err(_) => Ok((HotkeyMode::DesktopCliFallback, HotkeySession::Fallback)),
