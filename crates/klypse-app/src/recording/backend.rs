@@ -3,9 +3,11 @@ use std::{collections::HashMap, sync::Mutex, time::Duration};
 use chrono::{DateTime, Utc};
 use klypse_domain::{
     CaptureArtifact, CaptureKind, DisplayServer, KlypseError, RecordingBackend, RecordingRequest,
+    RecordingTerminalEvent,
 };
 use klypse_media::{
-    GifPipeline, GifPipelineConfig, RecordingArtifact, VideoPipeline, VideoPipelineConfig,
+    GifPipeline, GifPipelineConfig, PipelineTerminalEvent, RecordingArtifact, VideoPipeline,
+    VideoPipelineConfig,
 };
 use klypse_platform::{
     CapabilityReport, PortalRecordingSource, X11CaptureBackend, X11RecordingSource,
@@ -145,23 +147,45 @@ impl RecordingBackend for DesktopRecordingBackend {
             .ok_or_else(|| {
                 KlypseError::UnavailableCapability("recording session not found".into())
             })?;
-        let artifact = match active.pipeline {
-            ActivePipeline::Video(pipeline) => pipeline.stop().map_err(media_error)?,
-            ActivePipeline::Gif(pipeline) => pipeline.stop().map_err(media_error)?,
+        let display = self.display;
+        gtk::gio::spawn_blocking(move || {
+            let artifact = match active.pipeline {
+                ActivePipeline::Video(pipeline) => pipeline.stop().map_err(media_error)?,
+                ActivePipeline::Gif(pipeline) => pipeline.stop().map_err(media_error)?,
+            };
+            Ok(to_capture_artifact(
+                session_id,
+                active.kind,
+                active.created_at,
+                display,
+                artifact,
+            ))
+        })
+        .await
+        .map_err(|_| media_error("recording finalization worker panicked"))?
+    }
+
+    fn terminal_event(&self, session_id: Uuid) -> Option<RecordingTerminalEvent> {
+        let active = match self.active.lock() {
+            Ok(active) => active,
+            Err(_) => return Some(RecordingTerminalEvent::Failed(lock_error().to_string())),
         };
-        Ok(to_capture_artifact(
-            session_id,
-            active.kind,
-            active.created_at,
-            self.display,
-            artifact,
-        ))
+        let active = active.get(&session_id)?;
+        let event = match &active.pipeline {
+            ActivePipeline::Video(pipeline) => pipeline.terminal_event(),
+            ActivePipeline::Gif(pipeline) => pipeline.terminal_event(),
+        }?;
+        Some(match event {
+            PipelineTerminalEvent::EndOfStream => RecordingTerminalEvent::EndOfStream,
+            PipelineTerminalEvent::Failed(error) => RecordingTerminalEvent::Failed(error),
+        })
     }
 }
 
 fn request_to_capture(request: &RecordingRequest) -> klypse_domain::CaptureRequest {
     klypse_domain::CaptureRequest {
         target: request.target,
+        delay: std::time::Duration::ZERO,
         copy_to_clipboard: false,
         selection: request.selection,
     }
@@ -196,4 +220,92 @@ fn media_error(error: impl std::fmt::Display) -> KlypseError {
 
 fn storage_error(error: impl std::fmt::Display) -> KlypseError {
     KlypseError::Storage(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    // Source guards can close portal sessions and block while releasing a
+    // stream. Include that cleanup in the work moved off the graphical thread.
+    struct SlowSourceRelease;
+
+    impl Drop for SlowSourceRelease {
+        fn drop(&mut self) {
+            std::thread::sleep(Duration::from_millis(250));
+        }
+    }
+
+    #[test]
+    fn stop_keeps_main_loop_responsive_while_releasing_the_stream() {
+        use gstreamer::prelude::*;
+        use klypse_media::PipelineSource;
+
+        let directory = tempfile::tempdir().unwrap();
+        let paths = AppPaths::from_roots(
+            directory.path().join("data"),
+            directory.path().join("cache"),
+            directory.path().join("run"),
+            directory.path().join("pictures"),
+        );
+        paths.ensure().unwrap();
+        gstreamer::init().unwrap();
+        let source = gstreamer::parse::bin_from_description(
+            "videotestsrc is-live=true ! video/x-raw,width=80,height=60 ! identity",
+            true,
+        )
+        .unwrap();
+        let source =
+            PipelineSource::from_element_with_guard(source.upcast(), 80, 60, SlowSourceRelease)
+                .unwrap();
+        let id = Uuid::new_v4();
+        let pipeline = VideoPipeline::start(
+            source,
+            paths.temporary.join(format!("{id}.webm")),
+            VideoPipelineConfig::default(),
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(150));
+        let backend = DesktopRecordingBackend {
+            paths,
+            display: DisplayServer::X11,
+            gif_fps: 12,
+            gif_maximum_duration: Duration::from_secs(30),
+            active: Mutex::new(HashMap::from([(
+                id,
+                ActiveRecording {
+                    pipeline: ActivePipeline::Video(pipeline),
+                    kind: CaptureKind::Video,
+                    created_at: Utc::now(),
+                },
+            )])),
+        };
+        let context = gtk::glib::MainContext::new();
+        let ticks = Arc::new(AtomicUsize::new(0));
+        let timer = gtk::glib::timeout_source_new(
+            Duration::from_millis(1),
+            None,
+            gtk::glib::Priority::DEFAULT,
+            {
+                let ticks = Arc::clone(&ticks);
+                move || {
+                    ticks.fetch_add(1, Ordering::Relaxed);
+                    gtk::glib::ControlFlow::Continue
+                }
+            },
+        );
+        timer.attach(Some(&context));
+        let artifact = context.block_on(backend.stop(id)).unwrap();
+        timer.destroy();
+        assert!(artifact.path.exists());
+        assert!(
+            ticks.load(Ordering::Relaxed) >= 5,
+            "pipeline finalization blocked the graphical loop"
+        );
+        assert!(backend.active.lock().unwrap().is_empty());
+    }
 }

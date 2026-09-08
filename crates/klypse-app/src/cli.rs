@@ -28,6 +28,9 @@ enum Command {
         /// What to capture
         #[arg(value_enum)]
         target: CaptureTargetArg,
+        /// Seconds to wait, for example to open a context menu
+        #[arg(long, default_value_t = 0, value_parser = clap::value_parser!(u64).range(0..=30))]
+        delay: u64,
     },
     /// Start recording a video or an animated GIF
     Record {
@@ -79,8 +82,10 @@ where
 {
     match Cli::try_parse_from(args)?.command {
         None | Some(Command::Open) => Ok(AppCommand::Open),
-        Some(Command::Capture { target }) => {
-            Ok(AppCommand::Capture(CaptureRequest::new(target.into())))
+        Some(Command::Capture { target, delay }) => {
+            let mut request = CaptureRequest::new(target.into());
+            request.delay = std::time::Duration::from_secs(delay);
+            Ok(AppCommand::Capture(request))
         }
         Some(Command::Record { kind, target }) => {
             RecordingRequest::new(kind.into(), target.into(), None)

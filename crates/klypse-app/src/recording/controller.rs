@@ -3,10 +3,14 @@ use std::{
     io::{self, Write},
     path::{Path, PathBuf},
     sync::Arc,
+    time::Instant,
 };
 
 use chrono::{DateTime, Utc};
-use klypse_domain::{CaptureKind, DisplayServer, KlypseError, RecordingBackend, RecordingRequest};
+use klypse_domain::{
+    CaptureArtifact, CaptureKind, DisplayServer, KlypseError, RecordingBackend, RecordingRequest,
+    RecordingTerminalEvent,
+};
 use klypse_media::{RecordingMachine, RecordingState};
 use klypse_storage::{AppPaths, AtomicCaptureFile, CaptureRecord, CaptureStore, NewCaptureRecord};
 use serde::{Deserialize, Serialize};
@@ -52,6 +56,7 @@ pub trait RecordingEffects: Send + Sync {
 struct ActiveRecording {
     id: Uuid,
     request: RecordingRequest,
+    started_at: Instant,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -108,6 +113,30 @@ impl RecordingController {
             Some(active) => Some(active.id),
             None => None,
         }
+    }
+
+    /// Check the active stream without consuming its terminal event.
+    pub fn terminal_event(&self) -> Option<RecordingTerminalEvent> {
+        if self.state() != RecordingUiState::Recording {
+            return None;
+        }
+        let active = self.active.as_ref()?;
+        self.backend.terminal_event(active.id).or_else(|| {
+            active
+                .request
+                .max_duration
+                .filter(|maximum| active.started_at.elapsed() >= *maximum)
+                .map(|_| RecordingTerminalEvent::EndOfStream)
+        })
+    }
+
+    /// Finalize spontaneous EOS or release a failed pipeline exactly once.
+    /// Errors preserve the recovery marker, like a user-requested stop.
+    pub async fn poll_terminal_event(&mut self) -> Result<Option<CaptureRecord>, KlypseError> {
+        if self.terminal_event().is_none() {
+            return Ok(None);
+        }
+        self.stop().await.map(Some)
     }
 
     pub fn recovery_marker_path(&self) -> PathBuf {
@@ -172,6 +201,7 @@ impl RecordingController {
         self.active = Some(ActiveRecording {
             id: session_id,
             request,
+            started_at: Instant::now(),
         });
         self.effects
             .recording_started(&self.active.as_ref().unwrap().request);
@@ -193,58 +223,32 @@ impl RecordingController {
                 return Err(error);
             }
         };
-        let artifact_id = artifact.id;
-        let extension = extension_for(artifact.kind);
-        let mut output = match AtomicCaptureFile::new(&self.paths, artifact.id, extension) {
-            Ok(output) => output,
-            Err(error) => return self.fail_storage(error),
-        };
-        let mut source = match File::open(&artifact.path) {
-            Ok(source) => source,
-            Err(error) => return self.fail_io(error),
-        };
-        if let Err(error) = io::copy(&mut source, &mut output) {
-            return self.fail_io(error);
-        }
-        let committed = match output.commit() {
-            Ok(path) => path,
-            Err(error) => return self.fail_storage(error),
-        };
-        let _ = fs::remove_file(&artifact.path);
-        self.effects.stage(RecordingStage::FileCommitted);
-
-        let file_size = match fs::metadata(&committed) {
-            Ok(metadata) => metadata.len(),
-            Err(error) => return self.fail_io(error),
-        };
-        let mut artifact = artifact;
-        artifact.path = committed.clone();
-        let new_record =
-            NewCaptureRecord::from_artifact(artifact, active.request.target, file_size);
-        let mut record = match self.store.insert(new_record) {
+        let paths = self.paths.clone();
+        let store = Arc::clone(&self.store);
+        let effects = Arc::clone(&self.effects);
+        let marker = self.recovery_marker_path();
+        let result = gtk::gio::spawn_blocking(move || {
+            persist_recording(
+                artifact,
+                active.request,
+                &paths,
+                &*store,
+                &*effects,
+                &marker,
+            )
+        })
+        .await
+        .map_err(|_| media_error("recording save worker panicked"))
+        .and_then(|result| result);
+        let record = match result {
             Ok(record) => record,
             Err(error) => {
-                let _ = AtomicCaptureFile::move_to_orphans(&self.paths, artifact_id, &committed);
-                return self.fail_storage(error);
+                self.fail(&error.to_string());
+                return Err(error);
             }
         };
-        self.effects.stage(RecordingStage::DatabaseInserted);
-
-        let thumbnail = self.paths.thumbnails.join(format!("{}.png", record.id));
-        if self
-            .effects
-            .generate_thumbnail(&record, &thumbnail)
-            .unwrap_or(false)
-            && self.store.set_thumbnail(&record.id, &thumbnail).is_ok()
-        {
-            record.thumbnail_path = Some(thumbnail);
-            self.effects.stage(RecordingStage::ThumbnailGenerated);
-        }
+        // Notifications and gallery callbacks belong to the calling UI thread.
         self.effects.gallery_saved(&record);
-        if let Err(error) = self.remove_recovery_marker() {
-            self.fail(&error.to_string());
-            return Err(error);
-        }
         self.machine.finish().map_err(media_error)?;
         self.active = None;
         self.recovery_required = false;
@@ -290,31 +294,56 @@ impl RecordingController {
         Ok(())
     }
 
-    fn remove_recovery_marker(&self) -> Result<(), KlypseError> {
-        match fs::remove_file(self.recovery_marker_path()) {
-            Ok(()) => {
-                File::open(&self.paths.temporary)?.sync_all()?;
-                Ok(())
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error.into()),
-        }
-    }
-
     fn fail(&mut self, reason: &str) {
         let _ = self.machine.fail(reason);
         self.effects.state_changed(RecordingUiState::Failed);
     }
+}
 
-    fn fail_io<T>(&mut self, error: io::Error) -> Result<T, KlypseError> {
-        self.fail(&error.to_string());
-        Err(error.into())
-    }
+fn persist_recording(
+    mut artifact: CaptureArtifact,
+    request: RecordingRequest,
+    paths: &AppPaths,
+    store: &dyn CaptureStore,
+    effects: &dyn RecordingEffects,
+    marker: &Path,
+) -> Result<CaptureRecord, KlypseError> {
+    let artifact_id = artifact.id;
+    let mut output = AtomicCaptureFile::new(paths, artifact.id, extension_for(artifact.kind))
+        .map_err(storage_error)?;
+    let mut source = File::open(&artifact.path)?;
+    io::copy(&mut source, &mut output)?;
+    let committed = output.commit().map_err(storage_error)?;
+    let _ = fs::remove_file(&artifact.path);
+    effects.stage(RecordingStage::FileCommitted);
 
-    fn fail_storage<T>(&mut self, error: klypse_storage::StorageError) -> Result<T, KlypseError> {
-        self.fail(&error.to_string());
-        Err(storage_error(error))
+    let file_size = fs::metadata(&committed)?.len();
+    artifact.path = committed.clone();
+    let new_record = NewCaptureRecord::from_artifact(artifact, request.target, file_size);
+    let mut record = match store.insert(new_record) {
+        Ok(record) => record,
+        Err(error) => {
+            let _ = AtomicCaptureFile::move_to_orphans(paths, artifact_id, &committed);
+            return Err(storage_error(error));
+        }
+    };
+    effects.stage(RecordingStage::DatabaseInserted);
+
+    let thumbnail = paths.thumbnails.join(format!("{}.png", record.id));
+    if effects
+        .generate_thumbnail(&record, &thumbnail)
+        .unwrap_or(false)
+        && store.set_thumbnail(&record.id, &thumbnail).is_ok()
+    {
+        record.thumbnail_path = Some(thumbnail);
+        effects.stage(RecordingStage::ThumbnailGenerated);
     }
+    match fs::remove_file(marker) {
+        Ok(()) => File::open(&paths.temporary)?.sync_all()?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(record)
 }
 
 const fn extension_for(kind: CaptureKind) -> &'static str {

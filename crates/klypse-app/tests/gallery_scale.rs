@@ -154,9 +154,27 @@ fn gallery_ui_is_virtualized_and_inline_preview_navigates() {
         assert!(selection.can_unselect());
         assert_eq!(selection.selected(), gtk::INVALID_LIST_POSITION);
 
+        // GTK mirrors the tooltip into the accessible description, so one left
+        // behind on an enabled button is announced to a screen reader as fact.
+        assert_eq!(
+            copy.tooltip_text().as_deref(),
+            Some("Select a capture first")
+        );
+
         selection.set_selected(0);
         assert!(copy.is_sensitive());
         assert!(edit.is_sensitive());
+        assert_eq!(
+            copy.tooltip_text(),
+            None,
+            "stale tooltip on an enabled Copy"
+        );
+        assert_eq!(
+            edit.tooltip_text(),
+            None,
+            "stale tooltip on an enabled Edit"
+        );
+
         let model = selection
             .model()
             .and_downcast::<gtk::gio::ListStore>()
@@ -167,6 +185,11 @@ fn gallery_ui_is_virtualized_and_inline_preview_navigates() {
         assert_eq!(selection.selected(), gtk::INVALID_LIST_POSITION);
         assert!(!copy.is_sensitive());
         assert!(!edit.is_sensitive());
+        assert_eq!(
+            copy.tooltip_text().as_deref(),
+            Some("Select a capture first"),
+            "tooltip not restored once the selection is gone"
+        );
         window.close();
     }
 

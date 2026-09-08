@@ -827,9 +827,9 @@ fn install_gallery_context_menu(
     copy_action.connect_clicked({
         let popover = popover.downgrade();
         let context_record = Rc::clone(&context_record);
-        move |_| {
+        move |button| {
             if let Some(record) = context_record.borrow().clone() {
-                copy_capture(&record);
+                copy_capture(button, &record);
             }
             if let Some(popover) = popover.upgrade() {
                 popover.popdown();
@@ -1425,11 +1425,20 @@ fn detail_pane(
         .margin_start(12)
         .margin_end(12)
         .build();
+    // The column opened on three greyed out buttons under no heading, which
+    // said neither what they act on nor why they are dead.
+    let actions_heading = gtk::Label::builder()
+        .label(gettext("Actions"))
+        .xalign(0.0)
+        .css_classes(["heading"])
+        .build();
+    gallery_selection.normal_controls.append(&actions_heading);
     let copy = gtk::Button::with_label(&gettext("Copy"));
     let edit = gtk::Button::with_label(&gettext("Edit"));
     let reveal = gtk::Button::with_label(&gettext("Reveal in Folder"));
     for button in [&copy, &edit, &reveal] {
         button.set_sensitive(false);
+        button.set_tooltip_text(Some(&gettext("Select a capture first")));
         gallery_selection.normal_controls.append(button);
     }
 
@@ -1461,9 +1470,9 @@ fn detail_pane(
     });
     copy.connect_clicked({
         let selection = selection.clone();
-        move |_| {
+        move |button| {
             if let Some(record) = selected_record(&selection) {
-                copy_capture(&record);
+                copy_capture(button, &record);
             }
         }
     });
@@ -1585,9 +1594,17 @@ fn detail_pane(
     pane
 }
 
-fn copy_capture(record: &CaptureRecord) {
-    if copy_record(record).is_err() {
-        tracing::warn!(capture_id = %record.id, "capture could not be copied");
+fn copy_capture(widget: &impl IsA<gtk::Widget>, record: &CaptureRecord) {
+    match copy_record(record) {
+        Ok(()) => super::window::show_action_message(widget, &gettext("Copied"), false),
+        Err(error) => {
+            tracing::warn!(capture_id = %record.id, %error, "capture could not be copied");
+            super::window::show_action_error(
+                widget,
+                &gettext("Unable to copy capture"),
+                &error.to_string(),
+            );
+        }
     }
 }
 
@@ -1858,7 +1875,27 @@ fn sync_detail_actions(
     let selected = record.is_some();
     copy.set_sensitive(selected);
     reveal.set_sensitive(selected);
-    edit.set_sensitive(record.is_some_and(|record| record.kind == CaptureKind::Screenshot));
+    let editable = record
+        .as_ref()
+        .is_some_and(|record| record.kind == CaptureKind::Screenshot);
+    edit.set_sensitive(editable);
+    // The tooltip has to follow sensitivity, the way apply_capability does in
+    // the recording bar: GTK mirrors it into the accessible description, so a
+    // stale "select a capture first" on an enabled button is announced as fact.
+    let waiting = (!selected).then(|| gettext("Select a capture first"));
+    copy.set_tooltip_text(waiting.as_deref());
+    reveal.set_tooltip_text(waiting.as_deref());
+    edit.set_tooltip_text(
+        if editable {
+            None
+        } else if selected {
+            // A capture IS selected; the reason Edit stays dead is its kind.
+            Some(gettext("Only screenshots can be edited"))
+        } else {
+            waiting
+        }
+        .as_deref(),
+    );
 }
 
 fn selected_record(selection: &gtk::SingleSelection) -> Option<CaptureRecord> {

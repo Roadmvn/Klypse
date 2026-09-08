@@ -1,7 +1,5 @@
 use std::{
-    cell::Cell,
     path::Path,
-    rc::Rc,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -70,7 +68,7 @@ pub fn run() -> glib::ExitCode {
     connect_open_capture_action(&application, gallery_event_sender.clone());
     dispatch_hotkey_actions(hotkey_action_receiver, sender.clone());
     start_hotkeys(hotkey_action_sender);
-    manage_recording_lifecycle(&application, recording_lifecycle_receiver, sender.clone());
+    manage_recording_lifecycle(&application, recording_lifecycle_receiver);
     dispatch_commands(
         receiver,
         gallery_event_sender,
@@ -252,11 +250,16 @@ fn connect_command_line(application: &adw::Application, sender: Sender<AppComman
     application.connect_command_line(move |application, command_line| {
         match cli::parse_from(command_line.arguments()) {
             Ok(command) => {
+                // Raising the gallery before taking pixels dismisses context
+                // menus and changes the active window we intended to capture.
+                let show_gallery = command == AppCommand::Open || application.windows().is_empty();
                 if command != AppCommand::Open && sender.try_send(command).is_err() {
                     eprintln!("Klypse could not queue the requested action");
                     return 1.into();
                 }
-                application.activate();
+                if show_gallery {
+                    application.activate();
+                }
                 0.into()
             }
             Err(error) => {
@@ -277,8 +280,39 @@ fn dispatch_commands(
     notifier: ui::window::UiNotifier,
 ) {
     glib::spawn_future_local(async move {
-        let mut runtime = None;
-        while let Ok(command) = receiver.recv().await {
+        let mut runtime: Option<ProductionCaptureRuntime> = None;
+        loop {
+            // Check between commands too: a busy queue must not starve stream
+            // failures or the active session's duration limit.
+            if let Some(runtime) = &mut runtime
+                && runtime.recording.terminal_event().is_some()
+            {
+                show_outcome(
+                    &notifier,
+                    recording_outcome(runtime.recording.poll_terminal_event().await),
+                );
+            }
+            let command = match glib::future_with_timeout(
+                Duration::from_millis(200),
+                receiver.recv(),
+            )
+            .await
+            {
+                Ok(Ok(command)) => command,
+                Ok(Err(_)) => break,
+                Err(_) => {
+                    if let Some(runtime) = &mut runtime
+                        && runtime.recording.terminal_event().is_some()
+                    {
+                        show_outcome(
+                            &notifier,
+                            recording_outcome(runtime.recording.poll_terminal_event().await),
+                        );
+                    }
+                    continue;
+                }
+            };
+            let is_capture = matches!(&command, AppCommand::Capture(_));
             tracing::info!(action = ?command, "received application command");
             if runtime.is_none() {
                 match ProductionCaptureRuntime::new(
@@ -291,47 +325,77 @@ fn dispatch_commands(
                     Err(error) => {
                         tracing::error!(%error, "capture runtime is unavailable");
                         notifier.show_error(format!("{}: {error}", gettext("Action failed")));
+                        if is_capture {
+                            ui::window::restore_after_capture();
+                        }
                         continue;
                     }
                 }
             }
-            // Commands are executed one at a time, so a single action that
-            // never finishes would silently swallow every later one and the
-            // application would look dead while still redrawing. Whatever the
-            // reason, give up rather than take the queue down with it.
-            let execution = runtime.as_mut().unwrap().execute(command);
-            let outcome = match glib::future_with_timeout(COMMAND_DEADLINE, execution).await {
+            // Finalization workers keep running if their future is dropped.
+            // Always await them so the controller reconciles the saved file
+            // and UI state. Captures apply their own deadline independently
+            // from any recording finalization observed while selecting.
+            let must_complete = is_capture || matches!(&command, AppCommand::StopRecording);
+            let execution = runtime.as_mut().unwrap().execute(command, &notifier);
+            let result = if must_complete {
+                Ok(execution.await)
+            } else {
+                glib::future_with_timeout(COMMAND_DEADLINE, execution).await
+            };
+            let outcome = match result {
                 Ok(outcome) => outcome,
                 Err(_) => {
                     tracing::error!("command timed out; releasing the queue");
                     notifier.show_error(gettext("Klypse stopped responding to that action"));
+                    if is_capture {
+                        ui::window::restore_after_capture();
+                    }
                     continue;
                 }
             };
-            match outcome {
-                CaptureOutcome::Saved(record) => {
-                    tracing::info!(capture_id = %record.id, "capture saved");
-                    // StopRecording also returns Saved, so the wording has to
-                    // follow what was actually produced.
-                    notifier.show_info(match record.kind {
-                        CaptureKind::Screenshot => gettext("Capture saved"),
-                        CaptureKind::Video | CaptureKind::Gif => gettext("Recording saved"),
-                    });
-                }
-                CaptureOutcome::Cancelled | CaptureOutcome::Ignored => {}
-                CaptureOutcome::Failed(error) => {
-                    tracing::error!(%error, "capture failed");
-                    notifier.show_error(format!("{}: {error}", gettext("Action failed")));
-                }
+            if is_capture {
+                ui::window::restore_after_capture();
             }
+            show_outcome(&notifier, outcome);
             tracing::debug!("command completed");
         }
     });
 }
 
+fn recording_outcome(result: Result<Option<CaptureRecord>, KlypseError>) -> CaptureOutcome {
+    match result {
+        Ok(Some(record)) => CaptureOutcome::Saved(record),
+        Ok(None) => CaptureOutcome::Ignored,
+        Err(error) => capture_error_outcome(error),
+    }
+}
+
+fn show_outcome(notifier: &ui::window::UiNotifier, outcome: CaptureOutcome) {
+    match outcome {
+        CaptureOutcome::Saved(record) => {
+            tracing::info!(capture_id = %record.id, "capture saved");
+            // StopRecording also returns Saved, so the wording has to
+            // follow what was actually produced.
+            notifier.show_info(match record.kind {
+                CaptureKind::Screenshot => gettext("Capture saved"),
+                CaptureKind::Video | CaptureKind::Gif => gettext("Recording saved"),
+            });
+        }
+        CaptureOutcome::Cancelled | CaptureOutcome::Ignored => {}
+        CaptureOutcome::Failed(error) => {
+            tracing::error!(%error, "capture failed");
+            notifier.show_error(format!("{}: {error}", gettext("Action failed")));
+        }
+    }
+}
+
 struct ProductionCaptureRuntime {
     service: CaptureService,
     recording: RecordingController,
+    capture_backend: Arc<dyn CaptureBackend>,
+    repository: Arc<dyn CaptureStore>,
+    recording_effects: GtkRecordingEffects,
     x11_backend: Option<Arc<X11CaptureBackend>>,
     copy_after_capture: bool,
     gif_maximum_duration: Duration,
@@ -389,22 +453,25 @@ impl ProductionCaptureRuntime {
             gif_fps,
             gif_maximum_duration,
         )?);
-        let recording_effects = Arc::new(GtkRecordingEffects {
+        let recording_effects = GtkRecordingEffects {
             gallery_events,
             lifecycle: recording_lifecycle,
             presentation: recording_presentation,
             notify_after_capture,
-        });
+        };
         let recording = RecordingController::new(
             recording_backend.clone(),
             Arc::clone(&repository),
             paths.clone(),
             recording_backend.display(),
-            recording_effects,
+            Arc::new(recording_effects.clone()),
         );
         Ok(Self {
-            service: CaptureService::new(backend, repository, paths, effects),
+            service: CaptureService::new(backend.clone(), repository.clone(), paths, effects),
             recording,
+            capture_backend: backend,
+            repository,
+            recording_effects,
             x11_backend,
             copy_after_capture,
             gif_maximum_duration,
@@ -412,20 +479,109 @@ impl ProductionCaptureRuntime {
         })
     }
 
-    async fn execute(&mut self, command: AppCommand) -> CaptureOutcome {
+    fn refresh_capture_settings(&mut self) -> Result<(), KlypseError> {
+        let preferences = AppSettings::new().ok();
+        let paths = paths_for_capture(preferences.as_ref())?;
+        self.copy_after_capture = preferences
+            .as_ref()
+            .is_none_or(AppSettings::copy_after_capture);
+        self.service = CaptureService::new(
+            self.capture_backend.clone(),
+            self.repository.clone(),
+            paths,
+            Arc::new(GtkCaptureEffects {
+                gallery_events: self.recording_effects.gallery_events.clone(),
+                notify_after_capture: preferences
+                    .as_ref()
+                    .is_none_or(AppSettings::notify_after_capture),
+            }),
+        );
+        Ok(())
+    }
+
+    fn refresh_recording_settings(&mut self) -> Result<(), KlypseError> {
+        // An active recording and its recovery marker keep their original
+        // destination and encoding settings until they have been finalized.
+        if self.recording.state() != RecordingUiState::Idle
+            || self.recording.active_session().is_some()
+        {
+            return Ok(());
+        }
+        let preferences = AppSettings::new().ok();
+        let paths = paths_for_capture(preferences.as_ref())?;
+        let fps = preferences.as_ref().map_or(12, AppSettings::gif_fps);
+        self.gif_maximum_duration = Duration::from_secs(u64::from(
+            preferences
+                .as_ref()
+                .map_or(30, AppSettings::gif_max_seconds),
+        ));
+        let backend = Arc::new(DesktopRecordingBackend::new(
+            paths.clone(),
+            fps,
+            self.gif_maximum_duration,
+        )?);
+        let mut effects = self.recording_effects.clone();
+        effects.notify_after_capture = preferences
+            .as_ref()
+            .is_none_or(AppSettings::notify_after_capture);
+        self.recording = RecordingController::new(
+            backend.clone(),
+            self.repository.clone(),
+            paths,
+            backend.display(),
+            Arc::new(effects),
+        );
+        Ok(())
+    }
+
+    async fn execute(
+        &mut self,
+        command: AppCommand,
+        notifier: &ui::window::UiNotifier,
+    ) -> CaptureOutcome {
         match command {
             AppCommand::Open => CaptureOutcome::Ignored,
             AppCommand::Capture(mut request) => {
-                request.copy_to_clipboard &= self.copy_after_capture;
-                if let Err(error) = self
-                    .select_x11_area(request.target, &mut request.selection)
-                    .await
-                {
+                if let Err(error) = self.refresh_capture_settings() {
                     return capture_error_outcome(error);
                 }
-                self.service.execute(AppCommand::Capture(request)).await
+                request.copy_to_clipboard &= self.copy_after_capture;
+                let mut capture = Box::pin(glib::future_with_timeout(
+                    COMMAND_DEADLINE,
+                    capture_request(&self.service, self.x11_backend.as_deref(), request),
+                ));
+                loop {
+                    match glib::future_with_timeout(Duration::from_millis(200), capture.as_mut())
+                        .await
+                    {
+                        Ok(Ok(outcome)) => return outcome,
+                        Ok(Err(_)) => {
+                            tracing::error!("capture timed out; releasing the queue");
+                            notifier
+                                .show_error(gettext("Klypse stopped responding to that action"));
+                            return CaptureOutcome::Ignored;
+                        }
+                        Err(_) => {
+                            if self.recording.terminal_event().is_some() {
+                                show_outcome(
+                                    notifier,
+                                    recording_outcome(self.recording.poll_terminal_event().await),
+                                );
+                            }
+                        }
+                    }
+                }
             }
             AppCommand::Record(mut request) => {
+                if self.recording.state() != RecordingUiState::Idle {
+                    return match self.recording.start(request).await {
+                        Ok(_) => CaptureOutcome::Ignored,
+                        Err(error) => capture_error_outcome(error),
+                    };
+                }
+                if let Err(error) = self.refresh_recording_settings() {
+                    return capture_error_outcome(error);
+                }
                 if request.kind == CaptureKind::Gif {
                     request.max_duration = Some(
                         request
@@ -444,6 +600,10 @@ impl ProductionCaptureRuntime {
                     Ok(_) => CaptureOutcome::Ignored,
                     Err(error) => capture_error_outcome(error),
                 }
+            }
+            // An automatic EOS may have finalized just before a queued click.
+            AppCommand::StopRecording if self.recording.state() == RecordingUiState::Idle => {
+                CaptureOutcome::Ignored
             }
             AppCommand::StopRecording => match self.recording.stop().await {
                 Ok(record) => CaptureOutcome::Saved(record),
@@ -494,6 +654,56 @@ impl ProductionCaptureRuntime {
     }
 }
 
+async fn capture_request(
+    service: &CaptureService,
+    backend: Option<&X11CaptureBackend>,
+    mut request: CaptureRequest,
+) -> CaptureOutcome {
+    if !request.delay.is_zero() {
+        glib::timeout_future(request.delay).await;
+        request.delay = Duration::ZERO;
+    }
+    if matches!(request.target, CaptureTarget::Area | CaptureTarget::Window)
+        && request.selection == CaptureSelection::Automatic
+        && let Some(backend) = backend
+    {
+        let result = async {
+            let mut snapshot = backend.capture_sync(&CaptureRequest::new(CaptureTarget::Screen))?;
+            // Also remove the temporary screenshot on cancellation or timeout.
+            let _cleanup = tempfile::TempPath::try_from_path(&snapshot.path)?;
+            let frames = backend.window_frames()?;
+            let rect = RegionOverlay::select_windows(&snapshot.path, frames)
+                .await?
+                .ok_or(KlypseError::Cancelled)?;
+            crate::capture::crop_snapshot(
+                &mut snapshot,
+                PixelRect {
+                    x: rect.x,
+                    y: rect.y,
+                    width: rect.width,
+                    height: rect.height,
+                },
+            )?;
+            service.save_artifact(request, snapshot)
+        }
+        .await;
+        return match result {
+            Ok(record) => CaptureOutcome::Saved(record),
+            Err(error) => capture_error_outcome(error),
+        };
+    }
+    service.execute(AppCommand::Capture(request)).await
+}
+
+fn paths_for_capture(preferences: Option<&AppSettings>) -> Result<AppPaths, KlypseError> {
+    let mut paths = AppPaths::discover().map_err(storage_error)?;
+    if let Some(directory) = preferences.and_then(AppSettings::capture_directory) {
+        paths.captures = directory;
+    }
+    paths.ensure().map_err(storage_error)?;
+    Ok(paths)
+}
+
 fn capture_error_outcome(error: KlypseError) -> CaptureOutcome {
     if matches!(error, KlypseError::Cancelled) {
         CaptureOutcome::Cancelled
@@ -534,35 +744,17 @@ impl CaptureEffects for GtkCaptureEffects {
 #[derive(Clone, Copy, Debug)]
 enum RecordingLifecycleEvent {
     StateChanged(RecordingUiState),
-    Started(Option<Duration>),
 }
 
 fn manage_recording_lifecycle(
     application: &adw::Application,
     events: Receiver<RecordingLifecycleEvent>,
-    commands: Sender<AppCommand>,
 ) {
     let application = application.clone();
     glib::spawn_future_local(async move {
-        let generation = Rc::new(Cell::new(0_u64));
         let mut hold_guard = None;
         while let Ok(event) = events.recv().await {
             match event {
-                RecordingLifecycleEvent::Started(Some(maximum_duration)) => {
-                    let current = generation.get().wrapping_add(1);
-                    generation.set(current);
-                    let generation = Rc::clone(&generation);
-                    let commands = commands.clone();
-                    glib::spawn_future_local(async move {
-                        glib::timeout_future(maximum_duration).await;
-                        if generation.get() == current {
-                            let _ = commands.try_send(AppCommand::StopRecording);
-                        }
-                    });
-                }
-                RecordingLifecycleEvent::Started(None) => {
-                    generation.set(generation.get().wrapping_add(1));
-                }
                 RecordingLifecycleEvent::StateChanged(state) => {
                     let active = matches!(
                         state,
@@ -575,14 +767,6 @@ fn manage_recording_lifecycle(
                     } else if !active {
                         hold_guard = None;
                     }
-                    if matches!(
-                        state,
-                        RecordingUiState::Idle
-                            | RecordingUiState::Failed
-                            | RecordingUiState::RecoveryRequired
-                    ) {
-                        generation.set(generation.get().wrapping_add(1));
-                    }
                 }
             }
         }
@@ -590,6 +774,7 @@ fn manage_recording_lifecycle(
     });
 }
 
+#[derive(Clone)]
 struct GtkRecordingEffects {
     gallery_events: Sender<GalleryEvent>,
     lifecycle: Sender<RecordingLifecycleEvent>,
@@ -624,9 +809,6 @@ impl RecordingEffects for GtkRecordingEffects {
         if let Ok(mut presentation) = self.presentation.lock() {
             presentation.recording_started(request);
         }
-        let _ = self
-            .lifecycle
-            .try_send(RecordingLifecycleEvent::Started(request.max_duration));
     }
 
     fn generate_thumbnail(

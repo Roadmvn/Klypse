@@ -12,6 +12,23 @@ fn parses_area_capture() {
 }
 
 #[test]
+fn capture_delay_is_optional_and_bounded() {
+    for (args, seconds) in [
+        (vec!["klypse", "capture", "screen"], 0),
+        (vec!["klypse", "capture", "screen", "--delay", "5"], 5),
+        (vec!["klypse", "capture", "area", "--delay", "30"], 30),
+    ] {
+        let AppCommand::Capture(request) = parse_from(args).unwrap() else {
+            panic!("expected a capture");
+        };
+        assert_eq!(request.delay.as_secs(), seconds);
+    }
+    for value in ["-1", "31", "abc"] {
+        assert!(parse_from(["klypse", "capture", "screen", "--delay", value]).is_err());
+    }
+}
+
+#[test]
 fn parses_active_window_capture() {
     let command = parse_from(["klypse", "capture", "active-window"]).unwrap();
 

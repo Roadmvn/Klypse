@@ -21,12 +21,14 @@ const ZOOM_STEP: f64 = 1.25;
 
 type SaveAction = Rc<dyn Fn(&mut EditorController) -> Result<(), EditorError>>;
 type ExportAction = Rc<dyn Fn(&EditorController, &[u8]) -> Result<(), EditorError>>;
+type ErrorNotification = Rc<dyn Fn(&str)>;
 pub type RecordChangedCallback = Rc<dyn Fn(CaptureRecord)>;
 
 #[derive(Clone)]
 struct EditorActions {
     save: SaveAction,
     export: Option<ExportAction>,
+    notify_error: ErrorNotification,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -58,6 +60,7 @@ impl EditorView {
                     Ok(())
                 }),
                 export: None,
+                notify_error: Rc::new(|message| tracing::warn!(message, "editor action failed")),
             },
         )
     }
@@ -237,12 +240,14 @@ impl EditorView {
             let undo = undo.clone();
             let redo = redo.clone();
             let delete = delete.clone();
+            let notify_error = Rc::clone(&actions.notify_error);
             move || {
                 let controller = controller.borrow();
                 if let Err(error) =
                     refresh_preview(&controller, source.as_slice(), &picture, &canvas)
                 {
                     tracing::warn!(%error, "editor preview could not be refreshed");
+                    notify_error(&gettext("Preview could not be refreshed"));
                 }
                 zoom_label.set_label(&format!("{:.0}%", controller.zoom() * 100.0));
                 undo.set_sensitive(controller.can_undo());
@@ -255,8 +260,13 @@ impl EditorView {
         drag.connect_drag_begin({
             let controller = Rc::clone(&controller);
             let refresh = Rc::clone(&refresh);
+            let notify_error = Rc::clone(&actions.notify_error);
             move |_, x, y| {
-                let updated = controller.borrow_mut().pointer_down(Point { x, y }).is_ok();
+                let updated = edit_result(
+                    controller.borrow_mut().pointer_down(Point { x, y }),
+                    &notify_error,
+                )
+                .is_some();
                 if updated {
                     refresh();
                 }
@@ -265,15 +275,17 @@ impl EditorView {
         drag.connect_drag_update({
             let controller = Rc::clone(&controller);
             let refresh = Rc::clone(&refresh);
+            let notify_error = Rc::clone(&actions.notify_error);
             move |gesture, offset_x, offset_y| {
                 if let Some((start_x, start_y)) = gesture.start_point() {
-                    let updated = controller
-                        .borrow_mut()
-                        .pointer_move(Point {
+                    let updated = edit_result(
+                        controller.borrow_mut().pointer_move(Point {
                             x: start_x + offset_x,
                             y: start_y + offset_y,
-                        })
-                        .is_ok();
+                        }),
+                        &notify_error,
+                    )
+                    .is_some();
                     if updated {
                         refresh();
                     }
@@ -284,15 +296,17 @@ impl EditorView {
             let controller = Rc::clone(&controller);
             let refresh = Rc::clone(&refresh);
             let text = text.clone();
+            let notify_error = Rc::clone(&actions.notify_error);
             move |gesture, offset_x, offset_y| {
                 if let Some((start_x, start_y)) = gesture.start_point() {
-                    let updated = controller
-                        .borrow_mut()
-                        .pointer_up(Point {
+                    let updated = edit_result(
+                        controller.borrow_mut().pointer_up(Point {
                             x: start_x + offset_x,
                             y: start_y + offset_y,
-                        })
-                        .is_ok();
+                        }),
+                        &notify_error,
+                    )
+                    .is_some();
                     if updated {
                         if controller.borrow().active_tool() == EditorTool::Text {
                             text.grab_focus();
@@ -307,12 +321,13 @@ impl EditorView {
         text.connect_activate({
             let controller = Rc::clone(&controller);
             let refresh = Rc::clone(&refresh);
+            let notify_error = Rc::clone(&actions.notify_error);
             move |entry| {
-                let updated = controller
-                    .borrow_mut()
-                    .set_text(entry.text().as_str())
-                    .is_ok();
-                if updated {
+                if edit_result(
+                    controller.borrow_mut().set_text(entry.text().as_str()),
+                    &notify_error,
+                ) == Some(true)
+                {
                     entry.set_text("");
                     refresh();
                 }
@@ -323,12 +338,13 @@ impl EditorView {
             let controller = Rc::clone(&controller);
             let refresh = Rc::clone(&refresh);
             let text = text.clone();
+            let notify_error = Rc::clone(&actions.notify_error);
             move |_| {
-                let updated = controller
-                    .borrow_mut()
-                    .set_text(text.text().as_str())
-                    .is_ok();
-                if updated {
+                if edit_result(
+                    controller.borrow_mut().set_text(text.text().as_str()),
+                    &notify_error,
+                ) == Some(true)
+                {
                     text.set_text("");
                     refresh();
                 }
@@ -360,8 +376,9 @@ impl EditorView {
         undo.connect_clicked({
             let controller = Rc::clone(&controller);
             let refresh = Rc::clone(&refresh);
+            let notify_error = Rc::clone(&actions.notify_error);
             move |_| {
-                let updated = controller.borrow_mut().undo().is_ok();
+                let updated = edit_result(controller.borrow_mut().undo(), &notify_error).is_some();
                 if updated {
                     refresh();
                 }
@@ -370,8 +387,9 @@ impl EditorView {
         redo.connect_clicked({
             let controller = Rc::clone(&controller);
             let refresh = Rc::clone(&refresh);
+            let notify_error = Rc::clone(&actions.notify_error);
             move |_| {
-                let updated = controller.borrow_mut().redo().is_ok();
+                let updated = edit_result(controller.borrow_mut().redo(), &notify_error).is_some();
                 if updated {
                     refresh();
                 }
@@ -380,8 +398,11 @@ impl EditorView {
         delete.connect_clicked({
             let controller = Rc::clone(&controller);
             let refresh = Rc::clone(&refresh);
+            let notify_error = Rc::clone(&actions.notify_error);
             move |_| {
-                let updated = controller.borrow_mut().delete_last_layer().unwrap_or(false);
+                let updated =
+                    edit_result(controller.borrow_mut().delete_last_layer(), &notify_error)
+                        .unwrap_or(false);
                 if updated {
                     refresh();
                 }
@@ -419,11 +440,13 @@ impl EditorView {
         copy.connect_clicked({
             let controller = Rc::clone(&controller);
             let source = Rc::clone(&source);
+            let notify_error = Rc::clone(&actions.notify_error);
             move |_| {
                 if let Err(error) =
                     copy_flattened_image(source.as_slice(), controller.borrow().document())
                 {
                     tracing::warn!(%error, "flattened editor pixels could not be copied");
+                    notify_error(&gettext("Image could not be copied"));
                 }
             }
         });
@@ -431,9 +454,11 @@ impl EditorView {
             export.connect_clicked({
                 let controller = Rc::clone(&controller);
                 let source = Rc::clone(&source);
+                let notify_error = Rc::clone(&actions.notify_error);
                 move |_| {
                     if let Err(error) = export_action(&controller.borrow(), source.as_slice()) {
                         tracing::warn!(%error, "flattened screenshot could not be exported");
+                        notify_error(&gettext("Image could not be exported"));
                     }
                 }
             });
@@ -444,6 +469,7 @@ impl EditorView {
         keys.connect_key_pressed({
             let controller = Rc::clone(&controller);
             let refresh = Rc::clone(&refresh);
+            let notify_error = Rc::clone(&actions.notify_error);
             move |_, key, _, modifiers| {
                 let control = modifiers.contains(gdk::ModifierType::CONTROL_MASK);
                 let shift = modifiers.contains(gdk::ModifierType::SHIFT_MASK);
@@ -453,7 +479,8 @@ impl EditorView {
                         true
                     }
                     gdk::Key::Delete => {
-                        controller.borrow_mut().delete_last_layer().unwrap_or(false)
+                        edit_result(controller.borrow_mut().delete_last_layer(), &notify_error)
+                            .unwrap_or(false)
                     }
                     gdk::Key::plus | gdk::Key::KP_Add => {
                         controller.borrow_mut().zoom_by(ZOOM_STEP).is_ok()
@@ -461,8 +488,16 @@ impl EditorView {
                     gdk::Key::minus | gdk::Key::KP_Subtract => {
                         controller.borrow_mut().zoom_by(1.0 / ZOOM_STEP).is_ok()
                     }
-                    gdk::Key::z if control && shift => controller.borrow_mut().redo().is_ok(),
-                    gdk::Key::z if control => controller.borrow_mut().undo().is_ok(),
+                    gdk::Key::z if control && shift => {
+                        let can_redo = controller.borrow().can_redo();
+                        can_redo
+                            && edit_result(controller.borrow_mut().redo(), &notify_error).is_some()
+                    }
+                    gdk::Key::z if control => {
+                        let can_undo = controller.borrow().can_undo();
+                        can_undo
+                            && edit_result(controller.borrow_mut().undo(), &notify_error).is_some()
+                    }
                     gdk::Key::s if control => keyboard_save(&mut controller.borrow_mut()).is_ok(),
                     _ => false,
                 };
@@ -520,6 +555,14 @@ pub fn present(
     };
     let notifications = adw::ToastOverlay::new();
     let actions = EditorActions {
+        notify_error: {
+            let notifications = notifications.downgrade();
+            Rc::new(move |message| {
+                if let Some(notifications) = notifications.upgrade() {
+                    notifications.add_toast(adw::Toast::new(message));
+                }
+            })
+        },
         save: {
             let store = Arc::clone(&store);
             let paths = paths.clone();
@@ -630,6 +673,17 @@ pub fn present(
     Ok(())
 }
 
+fn edit_result<T>(result: Result<T, ImageError>, notify_error: &ErrorNotification) -> Option<T> {
+    match result {
+        Ok(value) => Some(value),
+        Err(error) => {
+            tracing::warn!(%error, "editor change could not be applied");
+            notify_error(&gettext("This change could not be applied"));
+            None
+        }
+    }
+}
+
 fn present_corrupt_annotation(
     mut record: CaptureRecord,
     store: Arc<dyn CaptureStore>,
@@ -697,4 +751,80 @@ fn refresh_preview(
         widget.set_size_request(display_width.max(1), display_height.max(1));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use image::{DynamicImage, ImageFormat, RgbaImage};
+
+    use super::*;
+
+    #[test]
+    fn editor_reports_failed_gestures_and_keeps_uncommitted_text() {
+        if gtk::init().is_err() {
+            eprintln!("GTK display unavailable; run under Xvfb to exercise editor signals");
+            return;
+        }
+        let mut source = Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(RgbaImage::new(80, 60))
+            .write_to(&mut source, ImageFormat::Png)
+            .unwrap();
+        let messages = Rc::new(RefCell::new(Vec::<String>::new()));
+        let view = EditorView::new_with_actions(
+            EditorController::new(80, 60).unwrap(),
+            Rc::new(source.into_inner()),
+            EditorActions {
+                save: Rc::new(|_| Ok(())),
+                export: None,
+                notify_error: {
+                    let messages = Rc::clone(&messages);
+                    Rc::new(move |message| messages.borrow_mut().push(message.into()))
+                },
+            },
+        )
+        .unwrap();
+        let drag = view
+            .canvas()
+            .observe_controllers()
+            .item(0)
+            .unwrap()
+            .downcast::<gtk::GestureDrag>()
+            .unwrap();
+
+        drag.emit_by_name::<()>("drag-begin", &[&f64::NAN, &10.0_f64]);
+
+        assert_eq!(
+            messages.borrow().as_slice(),
+            &[gettext("This change could not be applied")]
+        );
+        assert!(!view.controller.borrow().is_dirty());
+        let text = view
+            .root()
+            .last_child()
+            .unwrap()
+            .last_child()
+            .unwrap()
+            .downcast::<gtk::Entry>()
+            .unwrap();
+        text.set_text("Keep until positioned");
+        text.emit_activate();
+        assert_eq!(text.text(), "Keep until positioned");
+        assert!(view.controller.borrow().document().layers.is_empty());
+
+        {
+            let mut controller = view.controller.borrow_mut();
+            controller.set_tool(EditorTool::Text);
+            controller
+                .pointer_down(Point::new(4.0, 4.0).unwrap())
+                .unwrap();
+            controller
+                .pointer_up(Point::new(4.0, 4.0).unwrap())
+                .unwrap();
+        }
+        text.emit_activate();
+        assert!(text.text().is_empty());
+        assert_eq!(view.controller.borrow().document().layers.len(), 1);
+    }
 }

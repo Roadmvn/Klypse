@@ -9,6 +9,63 @@ use libadwaita::prelude::*;
 
 use crate::{APP_ID, i18n::gettext};
 
+thread_local! {
+    static CAPTURE_WINDOW: RefCell<Option<glib::WeakRef<gtk::Window>>> = const { RefCell::new(None) };
+}
+
+pub(crate) fn capture_from_button(
+    button: &gtk::Button,
+    commands: &Sender<AppCommand>,
+    request: klypse_domain::CaptureRequest,
+) {
+    if let Some(window) = button
+        .root()
+        .and_then(|root| root.downcast::<gtk::Window>().ok())
+    {
+        CAPTURE_WINDOW.with(|slot| *slot.borrow_mut() = Some(window.downgrade()));
+        window.set_visible(false);
+        if let Some(display) = gtk::gdk::Display::default() {
+            display.flush();
+        }
+    }
+    let commands = commands.clone();
+    glib::spawn_future_local(async move {
+        glib::timeout_future(std::time::Duration::from_millis(200)).await;
+        if commands.send(AppCommand::Capture(request)).await.is_err() {
+            restore_after_capture();
+        }
+    });
+}
+
+pub(crate) fn restore_after_capture() {
+    CAPTURE_WINDOW.with(|slot| {
+        if let Some(window) = slot.borrow_mut().take().and_then(|window| window.upgrade()) {
+            window.present();
+        }
+    });
+}
+
+pub(crate) fn show_action_error(widget: &impl IsA<gtk::Widget>, title: &str, detail: &str) {
+    show_action_message(widget, &format!("{title}: {detail}"), true);
+}
+
+pub(crate) fn show_action_message(widget: &impl IsA<gtk::Widget>, message: &str, error: bool) {
+    let mut current = Some(widget.as_ref().clone());
+    while let Some(widget) = current {
+        if let Some(overlay) = widget.downcast_ref::<adw::ToastOverlay>() {
+            overlay.add_toast(
+                adw::Toast::builder()
+                    .title(message)
+                    .use_markup(false)
+                    .timeout(if error { 8 } else { 3 })
+                    .build(),
+            );
+            return;
+        }
+        current = widget.parent();
+    }
+}
+
 #[derive(Default)]
 struct UiNotifierState {
     overlay: Option<glib::WeakRef<adw::ToastOverlay>>,
@@ -120,6 +177,12 @@ pub(crate) fn present(
         move |_| super::settings::present(&window)
     });
     header.pack_end(&preferences);
+    let shortcuts = gtk::Button::with_label(&gettext("Keyboard shortcuts"));
+    shortcuts.connect_clicked({
+        let window = window.clone();
+        move |_| super::shortcuts::present(&window)
+    });
+    header.pack_end(&shortcuts);
     let about = gtk::Button::builder()
         .icon_name("help-about-symbolic")
         .tooltip_text(gettext("About Klypse"))

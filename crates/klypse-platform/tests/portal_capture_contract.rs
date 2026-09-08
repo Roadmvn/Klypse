@@ -39,6 +39,7 @@ impl PortalCaptureClient for FakePortalClient {
 fn request(target: CaptureTarget) -> CaptureRequest {
     CaptureRequest {
         target,
+        delay: std::time::Duration::ZERO,
         copy_to_clipboard: false,
         selection: CaptureSelection::Automatic,
     }

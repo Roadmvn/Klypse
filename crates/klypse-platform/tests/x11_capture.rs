@@ -33,9 +33,17 @@ fn captures_a_known_color_x11_window() {
 
     let output = tempfile::tempdir().unwrap();
     let backend = X11CaptureBackend::connect(output.path()).unwrap();
+    assert!(
+        backend
+            .window_frames()
+            .unwrap()
+            .iter()
+            .any(|rect| rect.x == 10 && rect.y == 10 && rect.width == 64 && rect.height == 48)
+    );
     let artifact = backend
         .capture_sync(&CaptureRequest {
             target: CaptureTarget::Window,
+            delay: std::time::Duration::ZERO,
             copy_to_clipboard: false,
             selection: CaptureSelection::X11Window(window),
         })

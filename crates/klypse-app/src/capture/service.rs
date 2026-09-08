@@ -5,7 +5,9 @@ use std::{
     sync::Arc,
 };
 
-use klypse_domain::{AppCommand, CaptureBackend, CaptureRequest, KlypseError};
+use klypse_domain::{
+    AppCommand, CaptureArtifact, CaptureBackend, CaptureRequest, KlypseError, PixelRect,
+};
 use klypse_media::Thumbnailer;
 use klypse_storage::{AppPaths, AtomicCaptureFile, CaptureRecord, CaptureStore, NewCaptureRecord};
 
@@ -68,7 +70,16 @@ impl CaptureService {
     }
 
     async fn execute_capture(&self, request: CaptureRequest) -> Result<CaptureRecord, KlypseError> {
-        let mut artifact = self.backend.capture(&request).await?;
+        let artifact = self.backend.capture(&request).await?;
+        self.save_artifact(request, artifact)
+    }
+
+    /// Save pixels captured before the selector took focus, including popups.
+    pub fn save_artifact(
+        &self,
+        request: CaptureRequest,
+        mut artifact: CaptureArtifact,
+    ) -> Result<CaptureRecord, KlypseError> {
         let artifact_id = artifact.id;
         let backend_path = artifact.path.clone();
         let mut destination =
@@ -109,6 +120,30 @@ impl CaptureService {
         self.effects.notify_saved(&record);
         Ok(record)
     }
+}
+
+/// Crop the frozen desktop, never a second capture of the now-changed screen.
+pub fn crop_snapshot(artifact: &mut CaptureArtifact, rect: PixelRect) -> Result<(), KlypseError> {
+    let image =
+        image::open(&artifact.path).map_err(|error| KlypseError::Media(error.to_string()))?;
+    if rect.x < 0
+        || rect.y < 0
+        || rect.width == 0
+        || rect.height == 0
+        || i64::from(rect.x) + i64::from(rect.width) > i64::from(image.width())
+        || i64::from(rect.y) + i64::from(rect.height) > i64::from(image.height())
+    {
+        return Err(KlypseError::InvalidRequest(
+            "selection is outside the snapshot".into(),
+        ));
+    }
+    image
+        .crop_imm(rect.x as u32, rect.y as u32, rect.width, rect.height)
+        .save(&artifact.path)
+        .map_err(|error| KlypseError::Media(error.to_string()))?;
+    artifact.width = rect.width;
+    artifact.height = rect.height;
+    Ok(())
 }
 
 fn storage_error(error: impl std::fmt::Display) -> KlypseError {

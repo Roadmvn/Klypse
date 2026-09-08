@@ -1,4 +1,4 @@
-use std::{fs, io::Write};
+use std::{collections::HashSet, fs, io::Write};
 
 use chrono::Utc;
 use image::{DynamicImage, ImageFormat};
@@ -64,10 +64,12 @@ pub struct EditorController {
     text_size: f64,
     font: String,
     next_layer_id: u64,
+    allocated_layer_ids: HashSet<String>,
 }
 
 #[derive(Clone, Debug)]
 struct Gesture {
+    layer_id: String,
     start: Point,
     current: Point,
     freehand: Vec<Point>,
@@ -105,6 +107,11 @@ impl EditorController {
         document.validate()?;
         let color = Rgba::new(0.93, 0.12, 0.18, 1.0)?;
         let mut controller = Self {
+            allocated_layer_ids: document
+                .layers
+                .iter()
+                .map(|layer| layer.id.clone())
+                .collect(),
             saved_document: document.clone(),
             document,
             history: EditHistory::default(),
@@ -145,6 +152,7 @@ impl EditorController {
         self.cancel_current_action();
         let point = self.image_point(view_point)?;
         self.gesture = Some(Gesture {
+            layer_id: self.allocate_layer_id(),
             start: point,
             current: point,
             freehand: vec![point],
@@ -195,8 +203,8 @@ impl EditorController {
                 self.refresh_transform()
             }
             _ => {
-                let id = self.allocate_layer_id();
-                let Some(layer) = self.layer_for_gesture(&gesture, id)? else {
+                let Some(layer) = self.layer_for_gesture(&gesture, gesture.layer_id.clone())?
+                else {
                     return Ok(());
                 };
                 self.history
@@ -492,7 +500,7 @@ impl EditorController {
         self.draft_layer = self
             .gesture
             .as_ref()
-            .map(|gesture| self.layer_for_gesture(gesture, "draft".into()))
+            .map(|gesture| self.layer_for_gesture(gesture, gesture.layer_id.clone()))
             .transpose()?
             .flatten();
         Ok(())
@@ -545,9 +553,14 @@ impl EditorController {
     }
 
     fn allocate_layer_id(&mut self) -> String {
-        let id = format!("layer-{}", self.next_layer_id);
-        self.next_layer_id += 1;
-        id
+        loop {
+            let id = format!("layer-{}", self.next_layer_id);
+            self.next_layer_id = self.next_layer_id.wrapping_add(1);
+            // Keep removed and undone layers reserved: history may restore them later.
+            if self.allocated_layer_ids.insert(id.clone()) {
+                return id;
+            }
+        }
     }
 }
 

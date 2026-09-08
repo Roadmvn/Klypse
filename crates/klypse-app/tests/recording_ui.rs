@@ -87,13 +87,24 @@ fn recording_buttons_emit_the_shared_application_commands() {
     };
     assert_eq!(request.kind, CaptureKind::Gif);
     assert_eq!(request.max_duration, Some(Duration::from_secs(30)));
+
+    for (label, target) in [
+        ("Capture screen", CaptureTarget::Screen),
+        ("Capture window", CaptureTarget::Window),
+    ] {
+        find_button(&controls, label).emit_clicked();
+        let context = gtk::glib::MainContext::default();
+        let command = context.block_on(receiver.recv()).unwrap();
+        assert!(matches!(command, AppCommand::Capture(request) if request.target == target));
+    }
 }
 
 fn find_button(root: &impl IsA<gtk::Widget>, label: &str) -> gtk::Button {
     let mut pending = vec![root.as_ref().clone()];
     while let Some(widget) = pending.pop() {
         if let Ok(button) = widget.clone().downcast::<gtk::Button>()
-            && button.label().as_deref() == Some(label)
+            && (button.label().as_deref() == Some(label)
+                || button.tooltip_text().as_deref() == Some(label))
         {
             return button;
         }

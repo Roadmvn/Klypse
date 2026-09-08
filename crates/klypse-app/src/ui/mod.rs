@@ -4,6 +4,7 @@ pub mod recording;
 pub mod recovery;
 pub mod region_overlay;
 pub mod settings;
+pub mod shortcuts;
 pub mod window;
 
 pub(crate) fn set_accessible_label(widget: &impl gtk::prelude::IsA<gtk::Accessible>, label: &str) {

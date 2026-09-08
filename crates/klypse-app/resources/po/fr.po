@@ -234,6 +234,15 @@ msgstr "À propos de Klypse"
 msgid "Capture, record, and annotate your Linux desktop"
 msgstr "Capturez, enregistrez et annotez votre bureau Linux"
 
+msgid "Actions"
+msgstr "Actions"
+
+msgid "Select a capture first"
+msgstr "Sélectionnez d’abord une capture"
+
+msgid "Only screenshots can be edited"
+msgstr "Seules les captures d’écran peuvent être modifiées"
+
 msgid "Action failed"
 msgstr "Échec de l’action"
 
@@ -476,3 +485,72 @@ msgstr "Sélecteur de zone Klypse"
 
 msgid "Drag to select a region. Release to confirm, Esc cancels."
 msgstr "Faites glisser pour sélectionner une zone. Relâchez pour valider, Échap annule."
+
+msgid "Click a window or drag a region. Enter: entire screen. Esc: cancel."
+msgstr "Cliquez sur une fenêtre ou tracez une zone. Entrée : tout l’écran. Échap : annuler."
+
+msgid "Capture active window"
+msgstr "Capturer la fenêtre active"
+
+msgid "Capture menu (5 seconds)"
+msgstr "Menu · délai de 5 s"
+
+msgid "Not assigned"
+msgstr "Non attribué"
+
+msgid "Check desktop settings"
+msgstr "Voir les réglages du bureau"
+
+msgid "Your keyboard shortcuts"
+msgstr "Vos raccourcis clavier"
+
+msgid "Shortcuts currently configured in your desktop."
+msgstr "Raccourcis actuellement configurés dans votre bureau."
+
+msgid "Desktop shortcuts cannot be read here. Check your desktop keyboard settings."
+msgstr "Les raccourcis du bureau ne sont pas accessibles ici. Consultez ses réglages clavier."
+
+msgid "Drag to crop, or click a detected window."
+msgstr "Tracez une zone ou cliquez sur une fenêtre détectée."
+
+msgid "Capture the entire desktop in one click."
+msgstr "Capturez tout le bureau en un clic."
+
+msgid "Hover to see the frame, then click."
+msgstr "Survolez pour voir les contours, puis cliquez."
+
+msgid "Start, then open your context menu."
+msgstr "Lancez, puis ouvrez votre menu du clic droit."
+
+msgid "Advanced troubleshooting"
+msgstr "Dépannage avancé"
+
+msgid "Manual commands and technical diagnostics"
+msgstr "Commandes manuelles et diagnostics techniques"
+
+msgid "Application shortcut registration"
+msgstr "Enregistrement des raccourcis par Klypse"
+
+msgid "These are Klypse's registration preferences. Your desktop may override them; see Keyboard shortcuts in the main window for desktop bindings."
+msgstr "Ces réglages concernent les raccourcis demandés par Klypse. Le bureau peut les remplacer ; consultez « Raccourcis clavier » dans la fenêtre principale pour voir ceux du bureau."
+
+msgid "This change could not be applied"
+msgstr "Impossible d’appliquer cette modification"
+
+msgid "Preview could not be refreshed"
+msgstr "Impossible d’actualiser l’aperçu"
+
+msgid "Image could not be copied"
+msgstr "Impossible de copier l’image"
+
+msgid "Image could not be exported"
+msgstr "Impossible d’exporter l’image"
+
+msgid "Copied"
+msgstr "Copié"
+
+msgid "Unable to copy capture"
+msgstr "Impossible de copier la capture"
+
+msgid "Unable to share capture"
+msgstr "Impossible de partager la capture"

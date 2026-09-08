@@ -2,6 +2,54 @@ use klypse_app::ui::region_overlay::{OverlayPlacement, RegionSelectionState, to_
 use klypse_platform::Rect;
 
 #[test]
+fn click_selects_hovered_frame_but_drag_takes_precedence() {
+    let frame = Rect {
+        x: 100,
+        y: 80,
+        width: 600,
+        height: 400,
+    };
+    let mut state = RegionSelectionState::default();
+    state.hover(Some(frame));
+    assert_eq!(state.confirm(), Some(frame));
+    state.begin((150, 120));
+    state.update((152, 121));
+    assert_eq!(state.confirm(), Some(frame));
+    state.update((250, 200));
+    assert_eq!(
+        state.confirm(),
+        Some(Rect {
+            x: 150,
+            y: 120,
+            width: 100,
+            height: 80
+        })
+    );
+    state.cancel();
+    assert_eq!(state.confirm(), None);
+}
+
+#[test]
+fn window_detection_picks_the_frontmost_frame_and_excludes_its_far_edge() {
+    use klypse_app::ui::region_overlay::window_at_point;
+    let front = Rect {
+        x: 100,
+        y: 100,
+        width: 200,
+        height: 200,
+    };
+    let back = Rect {
+        x: 0,
+        y: 0,
+        width: 500,
+        height: 500,
+    };
+    assert_eq!(window_at_point(&[front, back], (150, 150)), Some(front));
+    assert_eq!(window_at_point(&[front, back], (300, 150)), Some(back));
+    assert_eq!(window_at_point(&[front, back], (600, 600)), None);
+}
+
+#[test]
 fn region_selection_normalizes_reverse_drag() {
     let mut state = RegionSelectionState::default();
     state.begin((100, 80));

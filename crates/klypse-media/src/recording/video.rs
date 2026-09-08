@@ -10,6 +10,7 @@ use crate::{
         PipelineSource, RecordingArtifact, file_size, finalization_error, gstreamer_error,
         make_element,
     },
+    recording::terminal::{PipelineTerminalEvent, TerminalMonitor},
 };
 
 const FINALIZATION_TIMEOUT: gst::ClockTime = gst::ClockTime::from_seconds(10);
@@ -38,6 +39,7 @@ impl Default for VideoPipelineConfig {
 
 pub struct VideoPipeline {
     pipeline: gst::Pipeline,
+    terminal: TerminalMonitor,
     path: std::path::PathBuf,
     _source_guard: Option<Box<dyn Any + Send>>,
 }
@@ -97,40 +99,33 @@ impl VideoPipeline {
             .add_many(elements.iter())
             .map_err(gstreamer_error)?;
         gst::Element::link_many(elements.iter()).map_err(gstreamer_error)?;
+        let terminal = TerminalMonitor::install(&pipeline.bus().ok_or_else(|| {
+            finalization_error("recording pipeline did not expose a message bus")
+        })?);
         pipeline
             .set_state(gst::State::Playing)
             .map_err(gstreamer_error)?;
         Ok(Self {
             pipeline,
+            terminal,
             path: destination,
             _source_guard: source_guard,
         })
     }
 
+    pub fn terminal_event(&self) -> Option<PipelineTerminalEvent> {
+        self.terminal.event()
+    }
+
     pub fn stop(self) -> Result<RecordingArtifact, MediaError> {
-        let bus = self
-            .pipeline
-            .bus()
-            .ok_or_else(|| finalization_error("recording pipeline did not expose a message bus"))?;
-        if !self.pipeline.send_event(gst::event::Eos::new()) {
+        if self.terminal.event().is_none()
+            && !self.pipeline.send_event(gst::event::Eos::new())
+            && self.terminal.event().is_none()
+        {
             let _ = self.pipeline.set_state(gst::State::Null);
             return Err(finalization_error("recording pipeline rejected EOS"));
         }
-        let message = bus.timed_pop_filtered(
-            FINALIZATION_TIMEOUT,
-            &[gst::MessageType::Eos, gst::MessageType::Error],
-        );
-        let result = match message.as_ref().map(|message| message.view()) {
-            Some(gst::MessageView::Eos(_)) => Ok(()),
-            Some(gst::MessageView::Error(error)) => Err(finalization_error(format!(
-                "{} ({:?})",
-                error.error(),
-                error.debug()
-            ))),
-            _ => Err(finalization_error(
-                "timed out while finalizing the WebM container",
-            )),
-        };
+        let result = self.terminal.wait(Duration::from_secs(10));
         self.pipeline
             .set_state(gst::State::Null)
             .map_err(gstreamer_error)?;

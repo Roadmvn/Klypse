@@ -35,14 +35,32 @@ pub fn present(parent: &adw::ApplicationWindow) {
         .build();
     page.add(&general_group(parent, &settings));
     page.add(&gif_group(&settings));
-    // The desktop owns the Print keys on GNOME, KDE and Xfce, so the app's own
-    // shortcuts usually cannot be registered. Show the escape hatch that works
-    // before the rows that often do nothing.
-    page.add(&fallback_group());
-    page.add(&shortcut_group(&settings));
-    page.add(&diagnostics_group(&CapabilityReport::detect()));
+    page.add(&advanced_group(&settings));
     dialog.add(&page);
     dialog.present();
+}
+
+fn advanced_group(settings: &AppSettings) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    let advanced = adw::ExpanderRow::builder()
+        .title(gettext("Advanced troubleshooting"))
+        .subtitle(gettext("Manual commands and technical diagnostics"))
+        .expanded(false)
+        .build();
+    let content = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(18)
+        .margin_top(12)
+        .margin_bottom(12)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+    content.append(&fallback_group());
+    content.append(&shortcut_group(settings));
+    content.append(&diagnostics_group(&CapabilityReport::detect()));
+    advanced.add_row(&content);
+    group.add(&advanced);
+    group
 }
 
 fn general_group(parent: &adw::ApplicationWindow, settings: &AppSettings) -> adw::PreferencesGroup {
@@ -56,12 +74,16 @@ fn general_group(parent: &adw::ApplicationWindow, settings: &AppSettings) -> adw
             settings
                 .capture_directory()
                 .and_then(|path| path.to_str().map(ToOwned::to_owned))
+                .or_else(|| {
+                    AppPaths::discover()
+                        .ok()
+                        .map(|paths| paths.captures.display().to_string())
+                })
                 .unwrap_or_default(),
         )
         .build();
-    // Left empty the row looked broken on a fresh install. Show where captures
-    // actually land as a placeholder - setting the text would pin the path and
-    // stop it following the user's Pictures directory.
+    // The initial value is displayed before connecting changed, so showing
+    // the effective default does not pin it in settings until the user edits.
     if let Ok(paths) = AppPaths::discover() {
         directory.set_show_apply_button(false);
         if let Some(default) = paths.captures.to_str() {
@@ -203,9 +225,9 @@ fn gif_group(settings: &AppSettings) -> adw::PreferencesGroup {
 
 fn shortcut_group(settings: &AppSettings) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::builder()
-        .title(gettext("Keyboard shortcuts"))
+        .title(gettext("Application shortcut registration"))
         .description(gettext(
-            "GNOME, KDE and Xfce already own the Print keys, so these often cannot be registered. Use the desktop shortcut commands above instead.",
+            "These are Klypse's registration preferences. Your desktop may override them; see Keyboard shortcuts in the main window for desktop bindings.",
         ))
         .build();
     for (title, action) in [

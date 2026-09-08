@@ -136,24 +136,101 @@ pub fn build(
 
 fn idle_actions(commands: &Sender<AppCommand>, capabilities: &CapabilityReport) -> gtk::Box {
     let actions = gtk::Box::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(12)
-        .halign(Align::Center)
+        .orientation(Orientation::Vertical)
+        .spacing(14)
         .build();
-    for (label, target) in [
-        (gettext("Capture area"), CaptureTarget::Area),
-        (gettext("Capture screen"), CaptureTarget::Screen),
-        (gettext("Capture window"), CaptureTarget::Window),
+    let capture_group = gtk::FlowBox::builder()
+        .selection_mode(gtk::SelectionMode::None)
+        .homogeneous(true)
+        .min_children_per_line(1)
+        .max_children_per_line(4)
+        .column_spacing(8)
+        .row_spacing(8)
+        .build();
+    let (shortcuts, _) = super::shortcuts::configured();
+    for (label, hint, icon, target, delay, cli) in [
+        (
+            gettext("Capture area"),
+            gettext("Drag to crop, or click a detected window."),
+            "edit-cut-symbolic",
+            CaptureTarget::Area,
+            0,
+            "klypse capture area",
+        ),
+        (
+            gettext("Capture screen"),
+            gettext("Capture the entire desktop in one click."),
+            "video-display-symbolic",
+            CaptureTarget::Screen,
+            0,
+            "klypse capture screen",
+        ),
+        (
+            gettext("Capture window"),
+            gettext("Hover to see the frame, then click."),
+            "focus-windows-symbolic",
+            CaptureTarget::Window,
+            0,
+            "klypse capture window",
+        ),
+        (
+            gettext("Capture menu (5 seconds)"),
+            gettext("Start, then open your context menu."),
+            "alarm-symbolic",
+            CaptureTarget::Screen,
+            5,
+            "klypse capture screen --delay 5",
+        ),
     ] {
+        let content = gtk::Box::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(6)
+            .margin_top(10)
+            .margin_bottom(10)
+            .margin_start(8)
+            .margin_end(8)
+            .build();
+        content.append(&gtk::Image::from_icon_name(icon));
+        let title = gtk::Label::new(Some(&label));
+        title.add_css_class("heading");
+        title.set_wrap(true);
+        content.append(&title);
+        let description = gtk::Label::new(Some(&hint));
+        description.set_wrap(true);
+        description.set_max_width_chars(23);
+        description.set_justify(gtk::Justification::Center);
+        content.append(&description);
+        if let Some(shortcut) = shortcuts.iter().find(|shortcut| shortcut.command == cli) {
+            let keys = gtk::Label::new(Some(&shortcut.keys));
+            keys.add_css_class("dim-label");
+            keys.set_wrap(true);
+            content.append(&keys);
+        }
         let command = commands.clone();
-        let button = gtk::Button::with_label(&label);
+        let button = gtk::Button::builder()
+            .child(&content)
+            .tooltip_text(&label)
+            .build();
+        super::set_accessible_label(&button, &label);
         apply_capability(&button, &capabilities.static_capture);
-        button.connect_clicked(move |_| {
-            let _ = command.try_send(AppCommand::Capture(CaptureRequest::new(target)));
+        if capabilities.static_capture.available {
+            button.set_tooltip_text(Some(&label));
+        }
+        button.connect_clicked(move |button| {
+            let mut request = CaptureRequest::new(target);
+            request.delay = Duration::from_secs(delay);
+            super::window::capture_from_button(button, &command, request);
         });
-        actions.append(&button);
+        capture_group.insert(&button, -1);
     }
-    actions.append(&record_button(
+    actions.append(&capture_group);
+
+    let record_group = gtk::Box::builder()
+        .halign(Align::Center)
+        .orientation(Orientation::Horizontal)
+        .spacing(6)
+        .build();
+    record_group.append(&record_button(
         &gettext("Record area"),
         CaptureKind::Video,
         CaptureTarget::Area,
@@ -161,7 +238,7 @@ fn idle_actions(commands: &Sender<AppCommand>, capabilities: &CapabilityReport) 
         &capabilities.video_recording,
         commands,
     ));
-    actions.append(&record_button(
+    record_group.append(&record_button(
         &gettext("Record screen"),
         CaptureKind::Video,
         CaptureTarget::Screen,
@@ -169,7 +246,7 @@ fn idle_actions(commands: &Sender<AppCommand>, capabilities: &CapabilityReport) 
         &capabilities.video_recording,
         commands,
     ));
-    actions.append(&record_button(
+    record_group.append(&record_button(
         &gettext("Record GIF"),
         CaptureKind::Gif,
         CaptureTarget::Area,
@@ -177,6 +254,7 @@ fn idle_actions(commands: &Sender<AppCommand>, capabilities: &CapabilityReport) 
         &capabilities.gif_recording,
         commands,
     ));
+    actions.append(&record_group);
     actions
 }
 

@@ -10,9 +10,16 @@ pub struct RegionSelectionState {
     start: Option<(i32, i32)>,
     current: Option<(i32, i32)>,
     cancelled: bool,
+    hovered: Option<Rect>,
 }
 
 impl RegionSelectionState {
+    pub fn hover(&mut self, rect: Option<Rect>) {
+        if self.start.is_none() {
+            self.hovered = rect;
+        }
+    }
+
     pub fn begin(&mut self, point: (i32, i32)) {
         self.start = Some(point);
         self.current = Some(point);
@@ -33,7 +40,13 @@ impl RegionSelectionState {
         if self.cancelled {
             return None;
         }
-        let rect = normalize_selection(self.start?, self.current?);
+        let (Some(start), Some(current)) = (self.start, self.current) else {
+            return self.hovered;
+        };
+        let rect = normalize_selection(start, current);
+        if rect.width < 4 && rect.height < 4 && self.hovered.is_some() {
+            return self.hovered;
+        }
         (rect.width > 0 && rect.height > 0).then_some(rect)
     }
 }
@@ -71,6 +84,25 @@ pub fn to_root_coordinates(selection: Rect, placement: OverlayPlacement) -> Rect
     }
 }
 
+pub fn window_at_point(frames: &[Rect], point: (i32, i32)) -> Option<Rect> {
+    frames.iter().copied().find(|rect| {
+        point.0 >= rect.x
+            && point.1 >= rect.y
+            && i64::from(point.0) < i64::from(rect.x) + i64::from(rect.width)
+            && i64::from(point.1) < i64::from(rect.y) + i64::from(rect.height)
+    })
+}
+
+pub fn from_root_coordinates(rect: Rect, placement: OverlayPlacement) -> Rect {
+    let scale = placement.scale.max(1);
+    Rect {
+        x: rect.x / scale - placement.origin.0,
+        y: rect.y / scale - placement.origin.1,
+        width: rect.width / scale as u32,
+        height: rect.height / scale as u32,
+    }
+}
+
 /// How long the selector may stay on screen before it gives up on its own.
 /// Generous on purpose: picking a region is a deliberate act and people do
 /// pause mid-drag.
@@ -101,6 +133,13 @@ pub struct RegionOverlay;
 
 impl RegionOverlay {
     pub async fn select(snapshot: impl AsRef<Path>) -> Result<Option<Rect>, KlypseError> {
+        Self::select_windows(snapshot, Vec::new()).await
+    }
+
+    pub async fn select_windows(
+        snapshot: impl AsRef<Path>,
+        frames: Vec<Rect>,
+    ) -> Result<Option<Rect>, KlypseError> {
         if gdk::Display::default().is_none() {
             return Err(KlypseError::UnavailableCapability(
                 "no display is available for the X11 region selector".into(),
@@ -117,6 +156,10 @@ impl RegionOverlay {
             .build();
         let overlay = gtk::Overlay::new();
         let picture = gtk::Picture::for_filename(snapshot);
+        let screen_size = picture
+            .paintable()
+            .map(|image| (image.intrinsic_width(), image.intrinsic_height()))
+            .ok_or_else(|| KlypseError::Media("snapshot could not be loaded".into()))?;
         // The snapshot covers every monitor. Holding it in a fixed container
         // lets us slide the hosting monitor under the window; its size is set
         // from the monitor scale on map so one image pixel stays one screen
@@ -129,7 +172,11 @@ impl RegionOverlay {
             .vexpand(true)
             .can_focus(true)
             .build();
-        let selector_label = gettext("Drag to select a region. Release to confirm, Esc cancels.");
+        let selector_label = if frames.is_empty() {
+            gettext("Drag to select a region. Release to confirm, Esc cancels.")
+        } else {
+            gettext("Click a window or drag a region. Enter: entire screen. Esc: cancel.")
+        };
         drawing.set_tooltip_text(Some(&selector_label));
         super::set_accessible_label(&drawing, &selector_label);
         drawing.set_draw_func({
@@ -160,11 +207,8 @@ impl RegionOverlay {
                     draw_hint(context, width, height, &selector_label);
                     return;
                 };
-                // Everything below is drawn strictly OUTSIDE the selection.
-                // The picture is grabbed from the screen right after the
-                // overlay is dismissed, and on a compositing desktop it may
-                // still be on screen at that moment: anything painted inside
-                // the rectangle would end up baked into the file.
+                // Keep the frame outside the selection so the frozen pixels
+                // that will be saved remain fully visible.
                 let x = f64::from(rect.x);
                 let y = f64::from(rect.y);
                 let w = f64::from(rect.width);
@@ -186,13 +230,53 @@ impl RegionOverlay {
             }
         });
         overlay.add_overlay(&drawing);
+        let screen_button = gtk::Button::with_label(&gettext("Capture screen"));
+        screen_button.set_halign(gtk::Align::End);
+        screen_button.set_valign(gtk::Align::Start);
+        screen_button.set_margin_top(24);
+        screen_button.set_margin_end(24);
+        screen_button.add_css_class("suggested-action");
+        screen_button.connect_clicked({
+            let answer = Rc::clone(&answer);
+            let window = window.clone();
+            let placement = Rc::clone(&placement);
+            move |_| {
+                answer.send(Some(from_root_coordinates(
+                    Rect {
+                        x: 0,
+                        y: 0,
+                        width: screen_size.0 as u32,
+                        height: screen_size.1 as u32,
+                    },
+                    *placement.borrow(),
+                )));
+                window.close();
+            }
+        });
+        overlay.add_overlay(&screen_button);
         window.set_child(Some(&overlay));
         window.set_cursor_from_name(Some("crosshair"));
 
         let drag = gtk::GestureDrag::new();
         drag.connect_drag_begin({
             let state = Rc::clone(&state);
+            let frames = frames.clone();
+            let placement = Rc::clone(&placement);
             move |gesture, x, y| {
+                let placement = *placement.borrow();
+                let point = to_root_coordinates(
+                    Rect {
+                        x: x as i32,
+                        y: y as i32,
+                        width: 1,
+                        height: 1,
+                    },
+                    placement,
+                );
+                state.borrow_mut().hover(
+                    window_at_point(&frames, (point.x, point.y))
+                        .map(|rect| from_root_coordinates(rect, placement)),
+                );
                 state
                     .borrow_mut()
                     .begin((x.round() as i32, y.round() as i32));
@@ -241,6 +325,30 @@ impl RegionOverlay {
         });
         drawing.add_controller(drag);
 
+        let motion = gtk::EventControllerMotion::new();
+        motion.connect_motion({
+            let state = Rc::clone(&state);
+            let placement = Rc::clone(&placement);
+            let drawing = drawing.clone();
+            move |_, x, y| {
+                let placement = *placement.borrow();
+                let point = to_root_coordinates(
+                    Rect {
+                        x: x as i32,
+                        y: y as i32,
+                        width: 1,
+                        height: 1,
+                    },
+                    placement,
+                );
+                let hovered = window_at_point(&frames, (point.x, point.y))
+                    .map(|rect| from_root_coordinates(rect, placement));
+                state.borrow_mut().hover(hovered);
+                drawing.queue_draw();
+            }
+        });
+        drawing.add_controller(motion);
+
         let keys = gtk::EventControllerKey::new();
         // Capture phase on the window: Esc has to work even when focus slipped
         // away from the drawing area, otherwise the overlay traps the session.
@@ -249,6 +357,7 @@ impl RegionOverlay {
             let state = Rc::clone(&state);
             let answer = Rc::clone(&answer);
             let window = window.clone();
+            let placement = Rc::clone(&placement);
             move |_, key, _, _| match key {
                 gdk::Key::Escape => {
                     state.borrow_mut().cancel();
@@ -260,11 +369,16 @@ impl RegionOverlay {
                     // The borrow has to end before close(): tearing the window
                     // down makes GTK reset its controllers, which fires
                     // drag-end, which borrows the very same cell.
-                    let confirmed = state.borrow().confirm();
-                    if let Some(rect) = confirmed {
-                        answer.send(Some(rect));
-                        window.close();
-                    }
+                    answer.send(Some(from_root_coordinates(
+                        Rect {
+                            x: 0,
+                            y: 0,
+                            width: screen_size.0 as u32,
+                            height: screen_size.1 as u32,
+                        },
+                        *placement.borrow(),
+                    )));
+                    window.close();
                     glib::Propagation::Stop
                 }
                 _ => glib::Propagation::Proceed,
@@ -354,11 +468,8 @@ impl RegionOverlay {
 
 /// Takes the overlay off screen and waits for the server to drop it.
 ///
-/// The caller grabs the selected pixels straight from the root window, so
-/// returning while the overlay is still mapped bakes the selection frame and
-/// its size label into the screenshot. Hiding the window only queues the work:
-/// the surface still has to reach the server and whatever sat underneath has
-/// to repaint, hence the flush and the settle delay.
+/// Recordings use the live root window after selection. Let the compositor
+/// repaint before they start; screenshots instead crop the frozen snapshot.
 async fn withdraw(window: &gtk::Window) {
     // The surface can already be gone, for instance when something outside the
     // application destroyed it. Touching the window then raises BadDrawable,

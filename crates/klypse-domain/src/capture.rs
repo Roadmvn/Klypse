@@ -50,6 +50,8 @@ pub enum CaptureSelection {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CaptureRequest {
     pub target: CaptureTarget,
+    /// Wait before taking pixels or opening a selector, so menus can be opened.
+    pub delay: Duration,
     pub copy_to_clipboard: bool,
     pub selection: CaptureSelection,
 }
@@ -58,6 +60,7 @@ impl CaptureRequest {
     pub const fn new(target: CaptureTarget) -> Self {
         Self {
             target,
+            delay: Duration::ZERO,
             copy_to_clipboard: true,
             selection: CaptureSelection::Automatic,
         }

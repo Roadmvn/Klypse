@@ -58,6 +58,100 @@ impl X11CaptureBackend {
         self.capture_rect(rect)
     }
 
+    /// Visible application frames, front to back, captured before our overlay maps.
+    pub fn window_frames(&self) -> Result<Vec<Rect>, KlypseError> {
+        use x11rb::protocol::xproto::MapState;
+        let screen = &self.connection.setup().roots[self.screen_number];
+        let property = |window, name: &[u8], kind| -> Result<Vec<u32>, KlypseError> {
+            let atom = self
+                .connection
+                .intern_atom(false, name)
+                .map_err(x11_error)?
+                .reply()
+                .map_err(x11_error)?
+                .atom;
+            Ok(self
+                .connection
+                .get_property(false, window, atom, kind, 0, 65536)
+                .map_err(x11_error)?
+                .reply()
+                .map_err(x11_error)?
+                .value32()
+                .map(|values| values.collect())
+                .unwrap_or_default())
+        };
+        let mut windows = property(screen.root, b"_NET_CLIENT_LIST_STACKING", AtomEnum::WINDOW)?;
+        if windows.is_empty() {
+            windows = self
+                .connection
+                .query_tree(screen.root)
+                .map_err(x11_error)?
+                .reply()
+                .map_err(x11_error)?
+                .children;
+        }
+        let mut excluded = Vec::new();
+        for name in [
+            b"_NET_WM_WINDOW_TYPE_DESKTOP".as_slice(),
+            b"_NET_WM_WINDOW_TYPE_DOCK",
+        ] {
+            excluded.push(
+                self.connection
+                    .intern_atom(false, name)
+                    .map_err(x11_error)?
+                    .reply()
+                    .map_err(x11_error)?
+                    .atom,
+            );
+        }
+        let mut frames = Vec::new();
+        for window in windows.into_iter().rev() {
+            let Ok(attributes) = self
+                .connection
+                .get_window_attributes(window)
+                .map_err(x11_error)
+                .and_then(|cookie| cookie.reply().map_err(x11_error))
+            else {
+                continue;
+            };
+            if attributes.map_state != MapState::VIEWABLE || attributes.override_redirect {
+                continue;
+            }
+            if property(window, b"_NET_WM_WINDOW_TYPE", AtomEnum::ATOM)
+                .unwrap_or_default()
+                .iter()
+                .any(|kind| excluded.contains(kind))
+            {
+                continue;
+            }
+            let Ok(rect) = self.window_rect(window) else {
+                continue;
+            };
+            let extents =
+                property(window, b"_NET_FRAME_EXTENTS", AtomEnum::CARDINAL).unwrap_or_default();
+            let (left, right, top, bottom) = if extents.len() == 4 {
+                (extents[0], extents[1], extents[2], extents[3])
+            } else {
+                (0, 0, 0, 0)
+            };
+            let x = (i64::from(rect.x) - i64::from(left)).max(0);
+            let y = (i64::from(rect.y) - i64::from(top)).max(0);
+            let right = (i64::from(rect.x) + i64::from(rect.width) + i64::from(right))
+                .min(i64::from(screen.width_in_pixels));
+            let bottom = (i64::from(rect.y) + i64::from(rect.height) + i64::from(bottom))
+                .min(i64::from(screen.height_in_pixels));
+            if right > x && bottom > y {
+                frames.push(Rect {
+                    x: x as i32,
+                    y: y as i32,
+                    width: (right - x) as u32,
+                    height: (bottom - y) as u32,
+                });
+            }
+        }
+        Ok(frames)
+    }
+
     pub fn capture_rect(&self, rect: Rect) -> Result<CaptureArtifact, KlypseError> {
         let screen = &self.connection.setup().roots[self.screen_number];
         validate_rect(rect, screen.width_in_pixels, screen.height_in_pixels)?;

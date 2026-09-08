@@ -35,4 +35,5 @@ thiserror.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+gstreamer.workspace = true
 futures-lite.workspace = true

@@ -3,7 +3,7 @@ mod capture;
 mod command;
 mod error;
 
-pub use backend::{CaptureBackend, HotkeyBackend, RecordingBackend};
+pub use backend::{CaptureBackend, HotkeyBackend, RecordingBackend, RecordingTerminalEvent};
 pub use capture::{
     CaptureArtifact, CaptureKind, CaptureRequest, CaptureSelection, CaptureTarget, DisplayServer,
     GIF_MAX_DURATION, PixelRect, RecordingRequest,

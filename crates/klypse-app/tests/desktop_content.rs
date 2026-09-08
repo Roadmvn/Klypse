@@ -69,13 +69,13 @@ fn content_providers_offer_formats_for_their_capture_kind() {
     let formats = provider.formats();
     assert!(formats.contain_mime_type("text/uri-list"));
     assert!(!formats.contain_mime_type("image/png"));
+
+    clipboard_offers_the_picture_without_advertising_the_file();
 }
 
-#[test]
 fn clipboard_offers_the_picture_without_advertising_the_file() {
-    if gtk::init().is_err() {
-        return;
-    }
+    // Keep all GTK assertions on the same initialization thread, including
+    // when Rust's test harness runs each test on a separate OS thread.
     let screenshot = CaptureFixture::screenshot();
 
     let formats = image_provider(&screenshot.record.path).unwrap().formats();

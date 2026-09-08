@@ -1,5 +1,5 @@
 use klypse_app::editor::{EditorController, EditorTool};
-use klypse_image::{LayerKind, Point, Rect};
+use klypse_image::{AnnotationDocument, LayerKind, Point, Rect};
 
 fn point(x: f64, y: f64) -> Point {
     Point::new(x, y).unwrap()
@@ -116,4 +116,71 @@ fn gestures_after_crop_remain_in_original_image_coordinates() {
         editor.document().layers[0].bounds(),
         Rect::new(10.0, 20.0, 10.0, 10.0).unwrap()
     );
+}
+
+#[test]
+fn reopened_layers_with_sparse_and_custom_ids_survive_further_edits() {
+    let mut initial = EditorController::new(100, 100).unwrap();
+    initial.pointer_down(point(10.0, 10.0)).unwrap();
+    initial.pointer_up(point(30.0, 30.0)).unwrap();
+    let template = initial.document().layers[0].clone();
+    let mut document = AnnotationDocument::new(100, 100).unwrap();
+    for id in [
+        "layer-1",
+        "layer-3",
+        "custom-annotation",
+        "draft",
+        "layer-18446744073709551615",
+        "layer-18446744073709551616",
+    ] {
+        let mut layer = template.clone();
+        layer.id = id.into();
+        document.layers.push(layer);
+    }
+    let previous = document.layers.clone();
+    let mut editor = EditorController::from_document(document).unwrap();
+
+    for _ in 0..3 {
+        editor.pointer_down(point(40.0, 40.0)).unwrap();
+        editor.pointer_move(point(50.0, 50.0)).unwrap();
+        let draft = editor.draft_layer().unwrap().clone();
+        let mut preview = editor.document().clone();
+        preview.layers.push(draft.clone());
+        preview.validate().unwrap();
+        editor.pointer_up(point(50.0, 50.0)).unwrap();
+        assert_eq!(editor.document().layers.last(), Some(&draft));
+    }
+
+    editor.document().validate().unwrap();
+    assert_eq!(editor.document().layers.len(), previous.len() + 3);
+    assert_eq!(&editor.document().layers[..previous.len()], &previous);
+}
+
+#[test]
+fn reopened_layer_ids_remain_reserved_across_deletion_and_undo_redo() {
+    let mut initial = EditorController::new(100, 100).unwrap();
+    initial.pointer_down(point(10.0, 10.0)).unwrap();
+    initial.pointer_up(point(30.0, 30.0)).unwrap();
+    let previous = initial.document().layers[0].clone();
+    let mut editor = EditorController::from_document(initial.document().clone()).unwrap();
+
+    editor.delete_last_layer().unwrap();
+    editor.pointer_down(point(40.0, 40.0)).unwrap();
+    editor.pointer_up(point(50.0, 50.0)).unwrap();
+    let added = editor.document().layers[0].clone();
+    assert_ne!(added.id, previous.id);
+
+    editor.undo().unwrap();
+    editor.undo().unwrap();
+    assert_eq!(editor.document().layers, vec![previous]);
+    editor.redo().unwrap();
+    editor.redo().unwrap();
+    assert_eq!(editor.document().layers, vec![added.clone()]);
+
+    editor.undo().unwrap();
+    editor.pointer_down(point(60.0, 60.0)).unwrap();
+    editor.pointer_up(point(70.0, 70.0)).unwrap();
+    assert_ne!(editor.document().layers[0].id, added.id);
+    assert!(!editor.can_redo());
+    editor.document().validate().unwrap();
 }

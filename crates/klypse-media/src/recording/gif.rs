@@ -23,9 +23,9 @@ use crate::{
         PipelineSource, RecordingArtifact, file_size, finalization_error, gstreamer_error,
         make_element,
     },
+    recording::terminal::{PipelineTerminalEvent, TerminalMonitor},
 };
 
-const FINALIZATION_TIMEOUT: gst::ClockTime = gst::ClockTime::from_seconds(10);
 const MAX_EDGE: u32 = 1280;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -70,6 +70,7 @@ struct WorkerResult {
 
 pub struct GifPipeline {
     pipeline: gst::Pipeline,
+    terminal: TerminalMonitor,
     path: std::path::PathBuf,
     delay_hundredths: u16,
     worker: Option<JoinHandle<Result<WorkerResult, MediaError>>>,
@@ -129,13 +130,25 @@ impl GifPipeline {
 
         let delay_hundredths = ((100.0 / f64::from(config.fps)).round() as u16).max(1);
         let worker_stop = Arc::new(AtomicBool::new(false));
+        let terminal = TerminalMonitor::install(
+            &pipeline
+                .bus()
+                .ok_or_else(|| finalization_error("GIF pipeline did not expose a message bus"))?,
+        );
         pipeline
             .set_state(gst::State::Playing)
             .map_err(gstreamer_error)?;
         let worker = std::thread::spawn({
             let destination = destination.clone();
             let worker_stop = Arc::clone(&worker_stop);
-            move || encode_samples(appsink, &destination, delay_hundredths, worker_stop)
+            let terminal = terminal.clone();
+            move || {
+                let result = encode_samples(appsink, &destination, delay_hundredths, worker_stop);
+                if let Err(error) = &result {
+                    terminal.publish(PipelineTerminalEvent::Failed(error.to_string()));
+                }
+                result
+            }
         });
 
         let (automatic_cancel, automatic_receiver) = mpsc::channel();
@@ -156,6 +169,7 @@ impl GifPipeline {
 
         Ok(Self {
             pipeline,
+            terminal,
             path: destination,
             delay_hundredths,
             worker: Some(worker),
@@ -171,6 +185,10 @@ impl GifPipeline {
         self.automatic_stop_due.load(Ordering::Acquire)
     }
 
+    pub fn terminal_event(&self) -> Option<PipelineTerminalEvent> {
+        self.terminal.event()
+    }
+
     pub fn stop(mut self) -> Result<RecordingArtifact, MediaError> {
         if let Some(cancel) = self.automatic_cancel.take() {
             let _ = cancel.send(());
@@ -182,34 +200,21 @@ impl GifPipeline {
         // its asynchronous transition to Playing. Re-sending EOS here is safe
         // when the guard's event was accepted, and guarantees finalization when
         // that earlier event was rejected during the transition.
-        let _ = self.pipeline.send_event(gst::event::Eos::new());
-        let bus = self
-            .pipeline
-            .bus()
-            .ok_or_else(|| finalization_error("GIF pipeline did not expose a message bus"))?;
-        let message = bus.timed_pop_filtered(
-            FINALIZATION_TIMEOUT,
-            &[gst::MessageType::Eos, gst::MessageType::Error],
-        );
-        let result = match message.as_ref().map(|message| message.view()) {
-            Some(gst::MessageView::Eos(_)) => Ok(()),
-            Some(gst::MessageView::Error(error)) => Err(finalization_error(format!(
-                "{} ({:?})",
-                error.error(),
-                error.debug()
-            ))),
-            _ => Err(finalization_error("timed out while finalizing the GIF")),
-        };
-        self.pipeline
-            .set_state(gst::State::Null)
-            .map_err(gstreamer_error)?;
-        result?;
+        if self.terminal.event().is_none() {
+            let _ = self.pipeline.send_event(gst::event::Eos::new());
+        }
+        self.terminal.wait(Duration::from_secs(10))?;
+        // Keep the sink alive until the encoder drains the last queued frames.
+        // Null would discard them before the worker can write them to the GIF.
         let worker = self
             .worker
             .take()
             .ok_or_else(|| finalization_error("GIF encoder worker is unavailable"))?
             .join()
             .map_err(|_| finalization_error("GIF encoder worker panicked"))??;
+        self.pipeline
+            .set_state(gst::State::Null)
+            .map_err(gstreamer_error)?;
         validate_gif(&self.path)?;
         let duration = Duration::from_millis(
             worker

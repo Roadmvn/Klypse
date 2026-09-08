@@ -2,8 +2,8 @@ mod recording;
 mod thumbnail;
 
 pub use recording::{
-    GifPipeline, GifPipelineConfig, PipelineSource, RecordingArtifact, RecordingMachine,
-    RecordingState, VideoPipeline, VideoPipelineConfig, validate_gif,
+    GifPipeline, GifPipelineConfig, PipelineSource, PipelineTerminalEvent, RecordingArtifact,
+    RecordingMachine, RecordingState, VideoPipeline, VideoPipelineConfig, validate_gif,
 };
 pub use thumbnail::{MediaError, ThumbnailInfo, Thumbnailer};
 

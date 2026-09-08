@@ -149,6 +149,7 @@ impl CaptureServiceFixture {
     fn execute_area_with_copy(&self, copy_to_clipboard: bool) -> CaptureOutcome {
         futures_lite::future::block_on(self.service.execute(AppCommand::Capture(CaptureRequest {
             target: CaptureTarget::Area,
+            delay: std::time::Duration::ZERO,
             copy_to_clipboard,
             selection: CaptureSelection::Automatic,
         })))
@@ -209,4 +210,46 @@ fn unsupported_commands_do_not_call_the_backend() {
 
     assert!(matches!(outcome, CaptureOutcome::Ignored));
     assert!(fixture.events().is_empty());
+}
+
+#[test]
+fn frozen_menu_pixels_are_cropped_and_saved_without_recapturing() {
+    let fixture = CaptureServiceFixture::cancelled();
+    let source = fixture.paths.temporary.join("menu.png");
+    let menu_color = image::Rgba([220, 30, 70, 255]);
+    let pixels = image::RgbaImage::from_fn(40, 30, |x, y| {
+        if (10..25).contains(&x) && (5..15).contains(&y) {
+            menu_color
+        } else {
+            image::Rgba([0, 0, 0, 255])
+        }
+    });
+    pixels.save(&source).unwrap();
+    let mut snapshot = CaptureArtifact {
+        id: Uuid::new_v4(),
+        kind: CaptureKind::Screenshot,
+        path: source,
+        width: 40,
+        height: 30,
+        duration: None,
+        created_at: Utc::now(),
+        backend: DisplayServer::X11,
+    };
+    klypse_app::capture::crop_snapshot(
+        &mut snapshot,
+        klypse_domain::PixelRect {
+            x: 10,
+            y: 5,
+            width: 15,
+            height: 10,
+        },
+    )
+    .unwrap();
+    let mut request = CaptureRequest::new(CaptureTarget::Area);
+    request.copy_to_clipboard = false;
+    let record = fixture.service.save_artifact(request, snapshot).unwrap();
+    let saved = image::open(record.path).unwrap().to_rgba8();
+    assert_eq!(saved.dimensions(), (15, 10));
+    assert!(saved.pixels().all(|pixel| *pixel == menu_color));
+    assert!(!fixture.events().contains(&"backend"));
 }

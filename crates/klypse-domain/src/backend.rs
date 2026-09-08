@@ -12,6 +12,17 @@ pub trait CaptureBackend: Send + Sync {
 pub trait RecordingBackend: Send + Sync {
     async fn start(&self, request: &RecordingRequest) -> Result<Uuid, KlypseError>;
     async fn stop(&self, session_id: Uuid) -> Result<CaptureArtifact, KlypseError>;
+
+    /// Non-destructive snapshot: stopping still consumes/finalizes the session.
+    fn terminal_event(&self, _session_id: Uuid) -> Option<RecordingTerminalEvent> {
+        None
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RecordingTerminalEvent {
+    EndOfStream,
+    Failed(String),
 }
 
 #[async_trait]

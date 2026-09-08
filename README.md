@@ -81,9 +81,30 @@ GNOME, KDE, and Xfce already own the `Print` keys, so Klypse usually cannot regi
 | Record GIF | `klypse record gif area` |
 | Stop recording | `klypse stop` |
 
-Klypse also lists these commands under **Preferences → Desktop shortcut commands**, ready to copy.
+Klypse also lists these commands under **Preferences → Advanced troubleshooting → Desktop shortcut fallback**, ready to copy. Troubleshooting is collapsed by default; everyday preferences only show capture, language, notification, and recording settings.
+
+Capture destination, automatic copy, notifications, and GIF settings apply to the next capture or recording. An active recording keeps the settings it started with. Changing the interface language still requires a restart.
+
+The main window shows separate screenshot cards for region, desktop, window,
+and delayed menu capture. **Keyboard shortcuts** in the header lists the current
+Xfce bindings, also shown below the screenshot actions. Unassigned actions are
+marked explicitly; other desktops direct you to their keyboard settings.
+
+On X11, region and window capture share a visual selector: hover to outline a
+visible application frame (including its window decoration), click to capture
+it, or drag to crop freely. Press Enter or use **Capture screen** to capture the
+whole desktop. Esc cancels. Starting a screenshot from the gallery hides it
+until the capture finishes, so it does not cover the application underneath.
+
+For context menus on X11, bind `klypse capture screen --delay 5` to a spare
+shortcut (for example Super+Print). Press it **before** opening the menu, then
+right-click within five seconds. Some menus grab the keyboard and prevent the
+desktop's normal screenshot shortcut from firing. The delayed full-screen
+capture includes the menu and follows the usual gallery/clipboard workflow.
 
 The editor supports rectangle, ellipse, line, arrow, text, freehand, crop, pixelation, and blur tools, plus undo/redo, zoom, non-destructive save, flattened export, and clipboard copy.
+
+Saved annotations can be reopened and extended. Copying or dragging a saved screenshot from the gallery includes its annotations, blur, and crop; the original file remains unchanged. A rendering error stops sharing and displays an error.
 
 ### Gallery actions
 
@@ -101,11 +122,14 @@ Native package defaults:
 | Gallery database and annotations | `$XDG_DATA_HOME/klypse/library.sqlite3` |
 | Recovery orphans | `$XDG_DATA_HOME/klypse/orphans` |
 | Thumbnails | `$XDG_CACHE_HOME/klypse/thumbnails` |
+| Rendered files for annotated drag-and-drop | `$XDG_CACHE_HOME/klypse/shared` |
 | In-progress files | `$XDG_RUNTIME_DIR/klypse/tmp` |
 
 When an XDG variable is unset, the usual `~/.local/share`, `~/.cache`, and `~/Pictures` fallbacks apply. Flatpak stores database/cache state below `~/.var/app/io.github.roadmvn.Klypse/` while captures remain in the permitted Pictures directory.
 
 Klypse never logs capture contents. Interrupted and orphaned files are reported for an explicit restore/discard decision and are not deleted automatically.
+
+Rendered drag-and-drop files remain available after the drag finishes so receiving applications can open them. Files older than seven days are cleaned up during a later annotated drag.
 
 ## Uninstall
 
@@ -121,7 +145,7 @@ Package removal intentionally preserves captures and native user data. `flatpak 
 
 Klypse is Linux only. macOS and Windows are not planned.
 
-You need Rust 1.85 or newer (the workspace uses edition 2024), which the packaged `rustc` on some distributions does not yet satisfy. Install it with [rustup](https://rustup.rs) if in doubt.
+You need Rust 1.92 or newer for the current GTK dependencies (the workspace uses edition 2024). The packaged `rustc` on some distributions does not yet satisfy this; install it with [rustup](https://rustup.rs) if needed.
 
 On Debian, Ubuntu, and Kali, the build dependencies are:
 

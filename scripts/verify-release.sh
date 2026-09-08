@@ -29,12 +29,16 @@ timeout --kill-after=30s 10m xvfb-run -a \
     --test x11_recording_source
 timeout --kill-after=30s 10m xvfb-run -a \
   cargo test --locked -p klypse-app \
+    --lib \
     --test accessibility \
+    --test annotated_sharing \
     --test desktop_content \
     --test editor_view \
     --test gallery_scale \
     --test recording_ui \
-    --test recovery_ui
+    --test recovery_ui \
+    --test region_overlay \
+    -- --test-threads=1
 cargo deny --all-features check
 
 if [[ $# -gt 0 ]]; then

@@ -88,6 +88,56 @@ fn saved_annotations_reopen_without_touching_original() {
 }
 
 #[test]
+fn reopened_annotations_can_add_text_and_a_shape_then_save_again() {
+    let fixture = Fixture::new();
+    let mut editor = fixture.edited_controller();
+    let first_layer = editor.document().layers[0].clone();
+    let stored = editor
+        .save_visible(
+            &fixture.source,
+            &fixture.paths,
+            &fixture.repository,
+            &fixture.record,
+        )
+        .unwrap();
+    drop(editor);
+    let mut reopened = EditorController::open(&stored).unwrap();
+
+    reopened.set_tool(EditorTool::Text);
+    reopened
+        .pointer_down(Point::new(4.0, 4.0).unwrap())
+        .unwrap();
+    reopened.pointer_up(Point::new(4.0, 4.0).unwrap()).unwrap();
+    assert!(reopened.set_text("Continued").unwrap());
+    reopened.set_tool(EditorTool::Arrow);
+    reopened
+        .pointer_down(Point::new(5.0, 20.0).unwrap())
+        .unwrap();
+    reopened
+        .pointer_up(Point::new(30.0, 20.0).unwrap())
+        .unwrap();
+    assert!(reopened.is_dirty());
+    let expected = reopened.document().clone();
+    reopened
+        .save_visible(
+            &fixture.source,
+            &fixture.paths,
+            &fixture.repository,
+            &stored,
+        )
+        .unwrap();
+
+    let saved = fixture.repository.get(&stored.id).unwrap().unwrap();
+    let saved_editor = EditorController::open(&saved).unwrap();
+    assert_eq!(saved_editor.document(), &expected);
+    assert_eq!(saved_editor.document().layers.len(), 3);
+    assert_eq!(saved_editor.document().layers[0], first_layer);
+    assert!(!reopened.is_dirty());
+    assert!(!saved_editor.is_dirty());
+    assert_eq!(fs::read(&fixture.record.path).unwrap(), fixture.source);
+}
+
+#[test]
 fn visible_save_updates_the_same_record_thumbnail_without_touching_original() {
     let fixture = Fixture::new();
     let original = fs::read(&fixture.record.path).unwrap();

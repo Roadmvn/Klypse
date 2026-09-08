@@ -1726,6 +1726,7 @@ dependencies = [
  "clap",
  "futures-lite",
  "gettext-rs",
+ "gstreamer",
  "gtk4",
  "image",
  "klypse-domain",
